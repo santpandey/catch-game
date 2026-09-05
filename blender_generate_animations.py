@@ -88,20 +88,32 @@ def main():
     pose_catch_r = {"Palm": (0, -75, -20), "Thumb1": (13, 45, -105), "Index1": (85, 0, -15), "Index2": (90, 0, 0), "Middle1": (85, 0, 0), "Middle2": (90, 0, 0), "Ring1": (85, 0, 15), "Ring2": (90, 0, 0), "Pinky1": (85, 0, 45), "Pinky2": (90, 0, -20)}
     pose_catch_l = {"Palm": (0, 75, 20), "Thumb1": (13, -45, 105), "Index1": (85, 0, 15), "Index2": (90, 0, 0), "Middle1": (85, 0, 0), "Middle2": (90, 0, 0), "Ring1": (85, 0, -15), "Ring2": (90, 0, 0), "Pinky1": (85, 0, -45), "Pinky2": (90, 0, 20)}
 
-    def create_action_for_pose(armature, action_name, pose_data):
+    # Anticipation: fingers spread slightly wider/back just before closing
+    pose_anticipate_r = {"Palm": (0, -75, -20), "Thumb1": (8, 45, -112), "Index1": (-12, 0, -18), "Index2": (-8, 0, 0), "Middle1": (-12, 0, 0), "Middle2": (-8, 0, 0), "Ring1": (-12, 0, 18), "Ring2": (-8, 0, 0), "Pinky1": (-12, 0, 50), "Pinky2": (-8, 0, -20)}
+    pose_anticipate_l = {"Palm": (0, 75, 20), "Thumb1": (8, -45, 112), "Index1": (-12, 0, 18), "Index2": (-8, 0, 0), "Middle1": (-12, 0, 0), "Middle2": (-8, 0, 0), "Ring1": (-12, 0, -18), "Ring2": (-8, 0, 0), "Pinky1": (-12, 0, -50), "Pinky2": (-8, 0, 20)}
+
+    # Follow-through: palm dips slightly, fingers curl fully past the catch pose
+    pose_follow_r = {"Palm": (12, -75, -20), "Thumb1": (15, 45, -105), "Index1": (95, 0, -15), "Index2": (100, 0, 0), "Middle1": (95, 0, 0), "Middle2": (100, 0, 0), "Ring1": (95, 0, 15), "Ring2": (100, 0, 0), "Pinky1": (95, 0, 45), "Pinky2": (100, 0, -20)}
+    pose_follow_l = {"Palm": (12, 75, 20), "Thumb1": (15, -45, 105), "Index1": (95, 0, 15), "Index2": (100, 0, 0), "Middle1": (95, 0, 0), "Middle2": (100, 0, 0), "Ring1": (95, 0, -15), "Ring2": (100, 0, 0), "Pinky1": (95, 0, -45), "Pinky2": (100, 0, 20)}
+
+    bpy.context.scene.render.fps = 24
+
+    def create_action_for_pose(armature, action_name, keyframes):
         action = bpy.data.actions.new(name=action_name)
         if not armature.animation_data:
             armature.animation_data_create()
         armature.animation_data.action = action
-        set_and_keyframe_pose(armature, 1, pose_data)
+        for frame, pose_data in keyframes:
+            set_and_keyframe_pose(armature, frame, pose_data)
         track = armature.animation_data.nla_tracks.new()
         track.name = action_name
         track.strips.new(name=action_name, start=1, action=action)
 
-    create_action_for_pose(right_armature, "Pose-Catch.R", pose_catch_r)
-    create_action_for_pose(right_armature, "Pose-Open.R", pose_open_r)
-    create_action_for_pose(left_armature, "Pose-Catch.L", pose_catch_l)
-    create_action_for_pose(left_armature, "Pose-Open.L", pose_open_l)
+    # Catch: open -> anticipate -> close -> follow-through -> settle (~0.8s at 24fps)
+    create_action_for_pose(right_armature, "Pose-Catch.R", [(1, pose_open_r), (5, pose_anticipate_r), (9, pose_catch_r), (13, pose_follow_r), (20, pose_catch_r)])
+    create_action_for_pose(right_armature, "Pose-Open.R", [(1, pose_open_r)])
+    create_action_for_pose(left_armature, "Pose-Catch.L", [(1, pose_open_l), (5, pose_anticipate_l), (9, pose_catch_l), (13, pose_follow_l), (20, pose_catch_l)])
+    create_action_for_pose(left_armature, "Pose-Open.L", [(1, pose_open_l)])
 
     filepath = "D:\\catch-game\\assets\\hands_animations.glb"
     bpy.ops.export_scene.gltf(

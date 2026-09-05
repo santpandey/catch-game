@@ -13,13 +13,45 @@ def clear_scene():
     bpy.ops.object.select_all(action='SELECT')
     bpy.ops.object.delete()
 
-def create_single_rigged_hand(side_prefix):
+def build_materials():
+    """Creates the skin and jersey materials."""
+    skin = bpy.data.materials.new(name="HandSkin")
+    skin.use_nodes = True
+    bsdf = skin.node_tree.nodes.get('Principled BSDF')
+    if bsdf:
+        bsdf.inputs['Base Color'].default_value = (0.894, 0.71, 0.596, 1) # E4B598
+        bsdf.inputs['Roughness'].default_value = 0.55
+        subsurface = bsdf.inputs.get('Subsurface Weight') or bsdf.inputs.get('Subsurface')
+        if subsurface:
+            subsurface.default_value = 0.05
+        nodes = skin.node_tree.nodes
+        links = skin.node_tree.links
+        noise = nodes.new('ShaderNodeTexNoise')
+        noise.inputs['Scale'].default_value = 18
+        noise.inputs['Detail'].default_value = 3
+        bump = nodes.new('ShaderNodeBump')
+        bump.inputs['Strength'].default_value = 0.25
+        bump.inputs['Distance'].default_value = 0.08
+        links.new(noise.outputs['Fac'], bump.inputs['Height'])
+        links.new(bump.outputs['Normal'], bsdf.inputs['Normal'])
+
+    jersey = bpy.data.materials.new(name="JerseyBlue")
+    jersey.use_nodes = True
+    jbsdf = jersey.node_tree.nodes.get('Principled BSDF')
+    if jbsdf:
+        jbsdf.inputs['Base Color'].default_value = (0.016, 0.11, 0.42, 1) # Team blue
+        jbsdf.inputs['Roughness'].default_value = 0.7
+
+    return skin, jersey
+
+def create_single_rigged_hand(side_prefix, skin_mat, jersey_mat):
     """Creates one complete, rigged hand object."""
     x_mult = 1 if side_prefix == 'R' else -1
     parts = []
     
     bpy.ops.mesh.primitive_cube_add(location=(0, 0, 0)); palm = bpy.context.active_object
     palm.name = f"Palm.{side_prefix}"; palm.scale = (0.7, 1, 0.2); parts.append(palm)
+    palm.data.materials.append(skin_mat)
     
     finger_mesh_data = [("Index", (-0.35, 0.85, 0), (0.18, 0.7, 0.18)), ("Middle", (-0.1, 0.9, 0), (0.2, 0.8, 0.2)), ("Ring", (0.15, 0.87, 0), (0.18, 0.75, 0.18)), ("Pinky", (0.4, 0.8, 0), (0.15, 0.6, 0.15))]
     for name, loc, scale in finger_mesh_data:
@@ -28,6 +60,11 @@ def create_single_rigged_hand(side_prefix):
         
     bpy.ops.mesh.primitive_cube_add(location=(-0.6 * x_mult, 0.3, 0)); thumb = bpy.context.active_object
     thumb.name = f"Thumb.{side_prefix}"; thumb.scale = (0.2, 0.4, 0.2); parts.append(thumb)
+
+    # Jersey sleeve cuff at the wrist (negative Y end of the palm)
+    bpy.ops.mesh.primitive_cylinder_add(radius=0.78, depth=0.7, location=(0, -1.3, 0), rotation=(math.pi / 2, 0, 0)); sleeve = bpy.context.active_object
+    sleeve.name = f"Sleeve.{side_prefix}"; sleeve.scale = (1.0, 0.4, 1.0); parts.append(sleeve)
+    sleeve.data.materials.append(jersey_mat)
     
     for part in parts:
         bpy.context.view_layer.objects.active = part
@@ -86,18 +123,10 @@ def main():
     """Main function to create and export the hands model."""
     clear_scene()
 
-    right_root, right_armature, right_mesh = create_single_rigged_hand('R')
-    left_root, left_armature, left_mesh = create_single_rigged_hand('L')
+    skin_material, jersey_material = build_materials()
 
-    skin_material = bpy.data.materials.new(name="HandSkin")
-    skin_material.use_nodes = True
-    principled_bsdf = skin_material.node_tree.nodes.get('Principled BSDF')
-    if principled_bsdf:
-        principled_bsdf.inputs['Base Color'].default_value = (0.894, 0.71, 0.596, 1) # E4B598
-        principled_bsdf.inputs['Roughness'].default_value = 0.8
-    
-    right_mesh.data.materials.append(skin_material)
-    left_mesh.data.materials.append(skin_material)
+    right_root, right_armature, right_mesh = create_single_rigged_hand('R', skin_material, jersey_material)
+    left_root, left_armature, left_mesh = create_single_rigged_hand('L', skin_material, jersey_material)
 
     right_root.location.x = 0.09
     left_root.location.x = -0.09
