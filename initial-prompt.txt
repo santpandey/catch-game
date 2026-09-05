@@ -1,0 +1,106 @@
+You are an expert in creating casual web games using assets(images, animations).
+
+
+Objective:
+
+Objective of the game is to practice slip catches in Cricket.
+
+
+Description of Surrounding/Game Aesthetics
+
+I need to create a 3D Game targetting for web(browser) at the moment. The game will have a setting which I would describe as :
+0. The end user will see the following when it lands on the game:
+	0.1 -> A blue sky covering around 40% of the screen from the top with few clouds hovering around. Birds(visibly small) are flying in the sky
+	0.2 -> A backdrop of a stadium covering the next 10% of the screen. You can imagine there would be few chairs or banners or hoarding visible opaquely.
+	0.3 -> There would be grass field covering the remaining 50% of the field similar to a cricket ground.
+
+1. 3 people are there in the entire setting. The setting is about 3 people doing slip catch practice on a ground. Slip catch practice is usually done in a Cricket Game.
+2. First guy has a red ball and he throws the ball towards the 2nd guy. The second guy is sitting on his knees and his holding bat in a slightly angled manner. The ball touches the edge of the bat and the ball starts difflecting towards the right side.
+3. Third user whose hands are only visible will move around via mouse control to hold the ball. This is the objective of the game. Third user has to catch maximum number of the catches.
+
+
+Assets/Animations:
+
+1. Can you create images for the above description. I believe you would need to create the following images.  You can correct me if I am wrong in asking you to create these many images below,:
+   1.1 -> Create image for blue sky, few clouds, stadium backdrown, green grass.
+   1.2 -> Create image for 1st person whose face is visible and wearing white colour dress(similar to how cricket players wear in a Test Match)
+   1.3 -> Create image for the 2nd person who is facing the 1st person and who is sitting on both the knees and holding a bat in an inclined manner. Do note that this person will occupy the lower leftish portion of the screen and an end user would be able to view his back and back of the head, neck etc.
+   1.4 -> Image of hands of the third person. To the end user who is playing the game, only the hands will be visible. Do note the hands will be the one which will be controlled by the end user who is playing the game with keyboard or mouse.
+ 
+
+2. You would need to create following animations of the actions being formed:
+
+   2.1 ->  Animation of birds(black colour and visibly small) are flying slowly in the sky.
+   2.2 ->  Animation of first person lifting his right hand(which holds the ball) in a wavy manner and throwing the ball as the hand descends.
+   2.3 ->  Animation of the red ball swinging slightly in the air before hitting the inclined bat.
+   2.4 ->  Animation of the red ball deflecting from the inclined bat and moving towards the right hand part of the screen.
+
+
+
+Gameplay:
+
+1. As mentioned in 2.2.4, the gameplay will start when the ball deflects and starts moving towards the right-upper or right-lower part of the screen. Third player has to catch these balls by moving its mouse or pressing arrow keys on the keyboard.
+2. Each successful catch will result in increment of points by 1.
+3. IMPORTANT -> You need to create logic in such a way that there's variation in how the ball deflects after hitting the bat. You can do following:
+   3.1 -> Ensure that the ball swings in the air before third player catches it.
+   3.2 -> Increase or decrease the speed of the ball along with the above point to ensure that the gameplay becomes difficult as game advances.
+
+
+
+Notes:
+1. Try to create the entire game with the best tools available. For example: If you think we can use React or NextJS or Vanilla JS which are best suited to implement the features, use them. If you think you need libraries like P5js in order to create animation, go ahead and use them. If you think that there are alternate other libraries available which will help you create these assets and animation, go ahead and use them.
+2. Ensure that the animations are very smooth and there are no wierd glitches.
+3. Ensure that the code which you write is very effecient in terms of memory being used because users will be playing these games in browser(Chrome, Mozilla, Edge etch). Ensure you create tests which ensure that you don't allocate memory unnecessarily.
+4. If the animations are not working smoothly due to premature optimizations in the code regarding memory, revisit the code and be liberal on them.
+
+
+
+
+Strategy:
+1. Plan out the entire development cycle.
+2. How will you create these animations and images. List down the steps clearly. If I need you to modify these animations, will you be able to do it properly. What tools will you use to do it.
+
+
+Lets start on this project :)
+
+
+
+
+--------------------------------------------------------------------------------------------------------------------------
+
+Prompt for the assets.
+
+
+I want you to create an image of a slip catch practice session for cricket game which has the following details:
+
+Setting:
+   1.The setting is of middle of an empty cricket ground on an afternoon.
+   2. Grass on the ground must be realisticly looking. It should not be exactly green colour but it should look like muddy yellowish green colour which is how the grass looks after being played for a long time on it.
+   3. On the backdrop, you should create a stadium stand with empty present. Do remember that it can be little opaque since its not in the focus.
+
+Characters:
+
+   1. There is a player who is dressed in white sports clothese(similar to how players wear it in Test Cticket Match). This player is holding a red cricket ball in his right hand. Ensure that the white seam is visible on the ball.   
+   2. 
+
+  1. The setting is of an empty cricket ground. Grass on the ground must be realisticly looking. It should not be exactly green colour but it should look like muddy yellowish green colour which is how the grass looks after being played for a long time on it.
+  2. On the backdrop, you should create a stadium stand with empty present. Do remember that it can be little opaque since its not in the focus.
+  3. On the top, sky should be blue colour with few patches of clouds being shown
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+I need to create a animation of the following:
