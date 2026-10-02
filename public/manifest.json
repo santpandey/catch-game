@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Slip Catch Practice",
-  "version": "1.0.0",
-  "description": "A quick cricket slip-catching game for your break. Click the toolbar icon to play in a tab.",
+  "version": "1.1.0",
+  "description": "Practice cricket slip catches in a floodlit 3D stadium. Quick fun for your break.",
   "action": {
     "default_title": "Play Slip Catch",
     "default_icon": {

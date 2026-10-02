@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "convert-images": "node convert-to-webp.js",
-    "generate-icons": "node generate-icons.js"
+    "generate-icons": "node generate-icons.js",
+    "capture-store": "node tools/capture-store-assets.js"
   },
   "devDependencies": {
     "sharp": "^0.33.0",

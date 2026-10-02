@@ -1,11 +1,24 @@
 import * as THREE from "three";
-// Try WebP first, fallback to PNG
-import stadiumImage from "./assets/stadium.webp";
 // Import GLB assets so Vite includes them in the build output
 import handsModelUrl from "./assets/hands_model.glb?url";
 import handsAnimationsUrl from "./assets/hands_animations.glb?url";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as CANNON from "cannon-es";
+import { setupStadium } from "./src/stadium.js";
+import { setupFloodlights } from "./src/lights.js";
+import { createEffects } from "./src/effects.js";
+import { createUI } from "./src/ui.js";
+import { createAudio } from "./src/audio.js";
+import {
+  planDelivery,
+  HANDS_Z,
+  BALL_MASS,
+} from "./src/delivery.js";
+
+// --- URL params ---
+const urlParams = new URLSearchParams(window.location.search);
+const debugMode = urlParams.has("debug");
+const shotMode = urlParams.get("shot"); // null | "" | "title"
 
 // --- Global Variables ---
 let scene,
@@ -15,211 +28,55 @@ let scene,
   playerHands,
   ball,
   ballBody,
-  scoreElement,
-  mixer;
+  mixer,
+  ui,
+  audio,
+  effects,
+  releaseFlash;
 let openActionR, catchActionR, openActionL, catchActionL;
+let stadium = null;
+let floodlights = null;
+
+// Game state
+// screen: "title" | "flyin" | "play" | "gameover"
+// phase:  "ready" | "flight" | "result" (timers in game-time seconds)
+let screen = "title";
+let phase = "ready";
+let phaseT = 0;
+let paused = false;
 let score = 0;
-let isBallInPlay = false;
+let streak = 0;
+let multiplier = 1;
+let lives = 3;
+let catches = 0;
+let difficulty = 0;
+let best = 0;
+let hadNewBest = false;
+try {
+  best = parseInt(localStorage.getItem("slipcatch.best"), 10) || 0;
+} catch (e) {}
+let delivery = null;
 let isBallCaught = false;
-let swingType = "none";
-let swingDelayZ = 0;
-let initialSwingForce = new CANNON.Vec3(0, 0, 0);
-const currentSwingForce = new CANNON.Vec3(0, 0, 0);
+const swingForce = new CANNON.Vec3(0, 0, 0);
 
-// --- Stadium Background Setup ---
-function setupStadiumBackground() {
-  const textureLoader = new THREE.TextureLoader();
+// Hands window at the z = HANDS_Z plane (recomputed on resize)
+const handsWindow = { xMin: -1, xMax: 1, yMin: 0.2, yMax: 1.8 };
+const raycaster = new THREE.Raycaster();
+const handsPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -HANDS_Z);
+const _ndc = new THREE.Vector2();
+const _hit = new THREE.Vector3();
 
-  textureLoader.load(
-    stadiumImage,
-    (texture) => {
-      // Cap anisotropy: 4 is visually identical to max for a backdrop, cheaper
-      texture.anisotropy = Math.min(
-        4,
-        renderer.capabilities.getMaxAnisotropy(),
-      );
-      texture.wrapS = THREE.RepeatWrapping;
-      texture.wrapT = THREE.ClampToEdgeWrapping;
-      texture.repeat.x = -1;
+// Camera fly-in (title -> slip pose)
+const PLAY_POS = new THREE.Vector3(0, 1.5, 5);
+const PLAY_QUAT = new THREE.Quaternion().setFromEuler(
+  new THREE.Euler(0.11, 0, 0),
+);
+let flyFrom = { pos: new THREE.Vector3(), quat: new THREE.Quaternion() };
+let flyT = 0;
+const FLY_DURATION = 1.8;
 
-      const radius = 40;
-      const thetaLength = Math.PI * 1.1;
-      const stadiumGeometry = new THREE.CylinderGeometry(
-        radius,
-        radius,
-        45,
-        64,
-        1,
-        true,
-        Math.PI - thetaLength / 2,
-        thetaLength,
-      );
-      const stadiumMaterial = new THREE.MeshBasicMaterial({
-        map: texture,
-        side: THREE.BackSide,
-      });
-
-      const stadium = new THREE.Mesh(stadiumGeometry, stadiumMaterial);
-      stadium.position.set(0, 9, 0);
-      scene.add(stadium);
-
-      console.log("✅ Stadium background loaded successfully");
-    },
-    undefined,
-    (error) => {
-      console.error("❌ Error loading stadium texture:", error);
-      const fallbackGeometry = new THREE.PlaneGeometry(100, 40);
-      const fallbackMaterial = new THREE.MeshBasicMaterial({ color: 0x0a1628 });
-      const fallbackStadium = new THREE.Mesh(
-        fallbackGeometry,
-        fallbackMaterial,
-      );
-      fallbackStadium.position.set(0, 2, -15);
-      scene.add(fallbackStadium);
-      console.log("⚠️ Using fallback stadium background");
-    },
-  );
-}
-
-// --- Fake Glow Sprite (replaces UnrealBloomPass) ---
-function createGlowTexture() {
-  const canvas = document.createElement("canvas");
-  canvas.width = 128;
-  canvas.height = 128;
-  const ctx = canvas.getContext("2d");
-  const gradient = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
-  gradient.addColorStop(0, "rgba(255,252,230,0.85)");
-  gradient.addColorStop(0.4, "rgba(255,248,210,0.25)");
-  gradient.addColorStop(1, "rgba(255,248,210,0)");
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, 128, 128);
-  return new THREE.CanvasTexture(canvas);
-}
-
-// --- Floodlight Towers ---
-function createFloodlightTexture() {
-  const canvas = document.createElement("canvas");
-  canvas.width = 256;
-  canvas.height = 128;
-  const ctx = canvas.getContext("2d");
-  ctx.fillStyle = "#101418";
-  ctx.fillRect(0, 0, 256, 128);
-  for (let row = 0; row < 4; row++) {
-    for (let col = 0; col < 8; col++) {
-      const x = 18 + col * 31.5;
-      const y = 18 + row * 31;
-      const gradient = ctx.createRadialGradient(x, y, 1, x, y, 12);
-      gradient.addColorStop(0, "#ffffff");
-      gradient.addColorStop(0.4, "#fff8d8");
-      gradient.addColorStop(1, "rgba(255,248,216,0)");
-      ctx.fillStyle = gradient;
-      ctx.beginPath();
-      ctx.arc(x, y, 12, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-  return new THREE.CanvasTexture(canvas);
-}
-
-function setupFloodlights() {
-  const lightTexture = createFloodlightTexture();
-  const glowTexture = createGlowTexture();
-  const poleMaterial = new THREE.MeshStandardMaterial({
-    color: 0x2a2f36,
-    roughness: 0.8,
-  });
-
-  const positions = [
-    { x: -18, z: -12, tilt: 0.35 },
-    { x: 18, z: -12, tilt: 0.35 },
-  ];
-
-  positions.forEach(({ x, z, tilt }) => {
-    const tower = new THREE.Group();
-
-    const pole = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.12, 0.22, 20, 8),
-      poleMaterial,
-    );
-    pole.position.y = 10;
-    tower.add(pole);
-
-    const headMaterial = new THREE.MeshStandardMaterial({
-      color: 0x1a1e24,
-      emissive: 0xffffff,
-      emissiveMap: lightTexture,
-      emissiveIntensity: 3,
-      map: lightTexture,
-    });
-    const head = new THREE.Mesh(
-      new THREE.BoxGeometry(3.2, 1.8, 0.2),
-      headMaterial,
-    );
-    head.position.y = 20.2;
-    head.rotation.x = tilt;
-    tower.add(head);
-
-    // Additive glow sprite in front of the light panel
-    const glow = new THREE.Sprite(
-      new THREE.SpriteMaterial({
-        map: glowTexture,
-        blending: THREE.AdditiveBlending,
-        transparent: true,
-        depthWrite: false,
-        opacity: 0.9,
-      }),
-    );
-    glow.scale.set(9, 5, 1);
-    glow.position.set(0, 20.2, 0.4);
-    tower.add(glow);
-
-    tower.position.set(x, 0, z);
-    scene.add(tower);
-  });
-}
-
-// --- Outfield + Pitch ---
-function createOutfieldTexture() {
-  const canvas = document.createElement("canvas");
-  canvas.width = 512;
-  canvas.height = 512;
-  const ctx = canvas.getContext("2d");
-
-  const stripeCount = 8;
-  const stripeHeight = canvas.height / stripeCount;
-  for (let i = 0; i < stripeCount; i++) {
-    ctx.fillStyle = i % 2 === 0 ? "#14240a" : "#1a2e0d";
-    ctx.fillRect(0, i * stripeHeight, canvas.width, stripeHeight);
-  }
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.RepeatWrapping;
-  texture.repeat.set(4, 4);
-  return texture;
-}
-
-function setupGround() {
-  const grassGeometry = new THREE.PlaneGeometry(500, 500);
-  const grassMaterial = new THREE.MeshStandardMaterial({
-    map: createOutfieldTexture(),
-    roughness: 1,
-  });
-  const grass = new THREE.Mesh(grassGeometry, grassMaterial);
-  grass.rotation.x = -Math.PI / 2;
-  grass.position.y = -1;
-  scene.add(grass);
-
-  const pitchGeometry = new THREE.PlaneGeometry(2.2, 30);
-  const pitchMaterial = new THREE.MeshStandardMaterial({
-    color: 0x8a7350,
-    roughness: 1,
-  });
-  const pitch = new THREE.Mesh(pitchGeometry, pitchMaterial);
-  pitch.rotation.x = -Math.PI / 2;
-  pitch.position.set(0, -0.99, -10);
-  scene.add(pitch);
-}
+// Attract-mode autopilot: hands chase the predicted crossing with lag
+const autoTarget = new THREE.Vector3();
 
 // --- Ball Leather Texture ---
 function createBallTexture() {
@@ -227,23 +84,52 @@ function createBallTexture() {
   canvas.width = 128;
   canvas.height = 128;
   const ctx = canvas.getContext("2d");
-  ctx.fillStyle = "#7a0d0d";
+  ctx.fillStyle = "#b3121a"; // bright cherry red so it pops at night
   ctx.fillRect(0, 0, 128, 128);
   // Leather grain: fine speckles of lighter/darker red
   for (let i = 0; i < 3000; i++) {
     ctx.fillStyle =
-      Math.random() > 0.5 ? "rgba(255,120,120,0.05)" : "rgba(30,0,0,0.08)";
+      Math.random() > 0.5 ? "rgba(255,140,140,0.05)" : "rgba(40,0,0,0.08)";
     ctx.fillRect(Math.random() * 128, Math.random() * 128, 2, 2);
   }
-  return new THREE.CanvasTexture(canvas);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+// --- Visible window at the hands plane (four corner raycasts) ---
+function computeHandsWindow() {
+  // matrixWorld isn't valid until the first render — without this the
+  // window is computed for an identity camera and the hands park
+  // below the frame
+  camera.updateMatrixWorld(true);
+  let xMin = Infinity,
+    xMax = -Infinity,
+    yMin = Infinity,
+    yMax = -Infinity;
+  for (const ny of [-1, 1]) {
+    for (const nx of [-1, 1]) {
+      raycaster.setFromCamera(_ndc.set(nx, ny), camera);
+      if (raycaster.ray.intersectPlane(handsPlane, _hit)) {
+        xMin = Math.min(xMin, _hit.x);
+        xMax = Math.max(xMax, _hit.x);
+        yMin = Math.min(yMin, _hit.y);
+        yMax = Math.max(yMax, _hit.y);
+      }
+    }
+  }
+  if (xMin !== Infinity) {
+    handsWindow.xMin = xMin;
+    handsWindow.xMax = xMax;
+    handsWindow.yMin = yMin;
+    handsWindow.yMax = yMax;
+  }
 }
 
 // --- Initialization ---
 function init() {
-  // Scene
+  // Scene (background + fog set by setupStadium to match the sky)
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x0a1628); // Dark night sky
-  scene.fog = new THREE.Fog(0x0a1628, 60, 220);
 
   // Camera
   camera = new THREE.PerspectiveCamera(
@@ -252,7 +138,8 @@ function init() {
     0.01,
     1000,
   );
-  camera.position.set(0, 1.5, 5);
+  camera.position.copy(PLAY_POS);
+  camera.quaternion.copy(PLAY_QUAT);
 
   // Renderer
   renderer = new THREE.WebGLRenderer({
@@ -260,9 +147,12 @@ function init() {
     antialias: true,
     powerPreference: "high-performance",
   });
+  updateCameraFraming();
   renderer.setSize(window.innerWidth, window.innerHeight);
   // Cap DPR: bloom buffers scale with pixel ratio, full DPR freezes hi-DPI screens
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.0;
 
   // Lighting
   const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
@@ -276,6 +166,25 @@ function init() {
     gravity: new CANNON.Vec3(0, -9.82, 0),
   });
 
+  // Swing force must be applied on every internal substep, not once per
+  // rendered frame
+  world.addEventListener("preStep", () => {
+    if (
+      phase === "flight" &&
+      delivery &&
+      delivery.swingType !== "none" &&
+      ballBody.position.z > delivery.swingStartZ
+    ) {
+      const dir =
+        delivery.swingType === "reverse" &&
+        ballBody.position.z >= delivery.reverseFlipZ
+          ? -1
+          : 1;
+      swingForce.set(delivery.swingForceX * dir, 0, 0);
+      ballBody.applyForce(swingForce);
+    }
+  });
+
   // Ground
   const groundBody = new CANNON.Body({
     type: CANNON.Body.STATIC,
@@ -285,14 +194,14 @@ function init() {
   groundBody.position.y = -1;
   world.addBody(groundBody);
 
-  // Ground: striped outfield + pitch strip
-  setupGround();
+  // Stadium environment: sky dome, photo backdrop, outfield, pitch, stumps
+  stadium = setupStadium(scene, renderer);
 
-  // Stadium Background - curved backdrop wrapping the arena
-  setupStadiumBackground();
+  // Roof floodlight glows + fake volumetric beams + dust motes
+  floodlights = setupFloodlights(scene);
 
-  // Floodlight towers
-  setupFloodlights();
+  // Feel effects: trail, burst, shake
+  effects = createEffects(scene, camera);
 
   // Ball
   ball = new THREE.Group();
@@ -300,6 +209,8 @@ function init() {
   const ballMaterial = new THREE.MeshStandardMaterial({
     map: createBallTexture(),
     roughness: 0.35,
+    emissive: 0xb3121a, // faint self-glow so the ball reads in the dark
+    emissiveIntensity: 0.15,
   });
   const ballSphere = new THREE.Mesh(ballGeometry, ballMaterial);
   ball.add(ballSphere);
@@ -314,10 +225,39 @@ function init() {
   scene.add(ball);
 
   ballBody = new CANNON.Body({
-    mass: 0.156,
+    mass: BALL_MASS,
     shape: new CANNON.Sphere(0.1),
   });
+  // Planner assumes zero damping
+  ballBody.linearDamping = 0;
   world.addBody(ballBody);
+
+  // Small additive flash at the release point
+  {
+    const canvas = document.createElement("canvas");
+    canvas.width = 64;
+    canvas.height = 64;
+    const ctx = canvas.getContext("2d");
+    const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+    g.addColorStop(0, "rgba(255,240,210,0.9)");
+    g.addColorStop(1, "rgba(255,240,210,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 64, 64);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const mat = new THREE.SpriteMaterial({
+      map: tex,
+      blending: THREE.AdditiveBlending,
+      transparent: true,
+      depthWrite: false,
+      opacity: 0,
+    });
+    mat.toneMapped = false;
+    releaseFlash = new THREE.Sprite(mat);
+    releaseFlash.scale.set(0.5, 0.5, 1);
+    releaseFlash.position.set(0, 1.5, -6);
+    scene.add(releaseFlash);
+  }
 
   // Player Hands
   const loader = new GLTFLoader();
@@ -326,8 +266,13 @@ function init() {
     (gltf) => {
       console.log("Base model loaded successfully.");
       playerHands = gltf.scene;
-      playerHands.scale.set(0.28, 0.28, 0.28);
-      playerHands.position.z = 4.2;
+      // ~0.26 m of hand at 0.8 m from camera ≈ 20% of frame height
+      playerHands.scale.set(0.22, 0.22, 0.22);
+      playerHands.position.set(
+        (handsWindow.xMin + handsWindow.xMax) / 2,
+        (handsWindow.yMin + handsWindow.yMax) / 2,
+        HANDS_Z,
+      );
       playerHands.traverse((child) => {
         if (child.isMesh && child.material) {
           child.material.roughness = 0.55;
@@ -424,35 +369,96 @@ function init() {
     },
   );
 
-  // Score Element
-  scoreElement = document.getElementById("score");
+  // UI + audio
+  audio = createAudio();
+  ui = createUI({ onStart, onRestart, onToggleMute });
+  ui.setMuted(audio.isMuted());
+  ui.setBest(best);
 
   // Event Listeners
   window.addEventListener("resize", onWindowResize, false);
   document.addEventListener("mousemove", onMouseMove, false);
   document.addEventListener("touchstart", onTouchMove, { passive: false });
   document.addEventListener("touchmove", onTouchMove, { passive: false });
+  document.addEventListener("visibilitychange", onVisibilityChange);
 
-  // Start
-  startNewRound();
+  computeHandsWindow();
+
+  // Debug hooks (?debug only): state handle + effect keys W/F/M
+  if (debugMode) {
+    window.__debug = {
+      get hands() {
+        return playerHands;
+      },
+      get ball() {
+        return ball;
+      },
+      get ballBody() {
+        return ballBody;
+      },
+      get delivery() {
+        return delivery;
+      },
+      get state() {
+        return { screen, phase, score, lives, streak };
+      },
+      scene,
+      camera,
+    };
+    document.addEventListener("keydown", (e) => {
+      if (!stadium) return;
+      if (e.code === "KeyW") stadium.triggerWave();
+      if (e.code === "KeyF") stadium.triggerFlashBurst();
+      if (e.code === "KeyM") stadium.setBoardMessage("CAUGHT!", 1500);
+    });
+  }
+
+  // Start: promo hides all DOM UI over the attract scene; ?shot jumps
+  // straight into play; default shows the title
+  if (shotMode === "promo") {
+    document.getElementById("ui").style.display = "none";
+  } else if (shotMode !== null && shotMode !== "title") {
+    startPlay(true);
+  } else {
+    ui.showTitle(best);
+  }
   animate();
 }
 
 // --- Event Handlers ---
-function onWindowResize() {
+// Portrait gets a wider horizontal FOV so the hands window stays usable
+function updateCameraFraming() {
   camera.aspect = window.innerWidth / window.innerHeight;
+  camera.fov =
+    camera.aspect < 1
+      ? Math.min(
+          100,
+          Math.max(75, 2 * Math.atan(Math.tan(Math.PI / 180 * 35) / camera.aspect) * 180 / Math.PI),
+        )
+      : 75;
   camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
+function onWindowResize() {
+  updateCameraFraming();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  computeHandsWindow();
+}
+
+// Raycast the pointer onto the hands plane; palm centre sits under cursor
 function moveHands(clientX, clientY) {
-  const mouseX = (clientX / window.innerWidth) * 2 - 1;
-  const mouseY = -(clientY / window.innerHeight) * 2 + 1;
+  _ndc.set(
+    (clientX / window.innerWidth) * 2 - 1,
+    -(clientY / window.innerHeight) * 2 + 1,
+  );
+  raycaster.setFromCamera(_ndc, camera);
+  if (!raycaster.ray.intersectPlane(handsPlane, _hit)) return;
   if (playerHands) {
-    const playAreaWidth = 4;
-    const playAreaHeight = 2;
-    playerHands.position.x = mouseX * (playAreaWidth / 2);
-    playerHands.position.y = mouseY * (playAreaHeight / 2) + 1;
+    playerHands.position.set(
+      THREE.MathUtils.clamp(_hit.x, handsWindow.xMin, handsWindow.xMax),
+      THREE.MathUtils.clamp(_hit.y, handsWindow.yMin, handsWindow.yMax),
+      HANDS_Z,
+    );
   }
 }
 
@@ -468,10 +474,114 @@ function onTouchMove(event) {
   }
 }
 
-// --- Game Logic ---
-function startNewRound() {
-  isBallInPlay = true;
+function onVisibilityChange() {
+  if (document.hidden) {
+    paused = true;
+    audio.suspend();
+  } else {
+    paused = false;
+    audio.resume();
+    // Discard the paused gap so physics/timers don't lurch forward
+    clock.getDelta();
+    lastFrameTime = performance.now();
+  }
+}
+
+// --- Game flow ---
+function startPlay(skipFly) {
+  audio.unlock(); // resolves within ~1 s even on a hung device
+  audio.setAmbience(0.35);
+  ui.hideTitle();
+  if (skipFly) {
+    camera.position.copy(PLAY_POS);
+    camera.quaternion.copy(PLAY_QUAT);
+    screen = "play";
+    phase = "ready";
+    phaseT = 0;
+    ui.showHud();
+  } else {
+    flyFrom.pos.copy(camera.position);
+    flyFrom.quat.copy(camera.quaternion);
+    flyT = 0;
+    screen = "flyin";
+  }
+}
+
+function onStart() {
+  startPlay(false);
+}
+
+function onRestart() {
+  score = 0;
+  streak = 0;
+  multiplier = 1;
+  lives = 3;
+  catches = 0;
+  difficulty = 0;
+  hadNewBest = false;
+  ui.hideGameOver();
+  ui.setScore(0);
+  ui.setStreak(0, 1);
+  ui.setLives(lives, 3);
+  ui.setBest(best);
+  ui.showHud();
+  effects.reset();
+  screen = "play";
+  phase = "ready";
+  phaseT = 0;
+}
+
+function onToggleMute() {
+  audio.setMuted(!audio.isMuted());
+  ui.setMuted(audio.isMuted());
+}
+
+// --- Round machine (game-time driven, no setTimeout) ---
+let readyTarget = 1.0; // randomized 0.7-1.4 s per round
+function setPhase(next) {
+  phase = next;
+  phaseT = 0;
+  if (next === "ready") readyTarget = 0.7 + Math.random() * 0.7;
+}
+
+function releaseBall() {
+  // Deliveries aimed into the visible window, shrunk by a margin
+  const margin = 0.15;
+  const win = {
+    xMin: handsWindow.xMin + margin,
+    xMax: handsWindow.xMax - margin,
+    yMin: handsWindow.yMin + margin,
+    yMax: handsWindow.yMax - margin,
+  };
+  delivery = planDelivery({ difficulty, window: win });
   isBallCaught = false;
+
+  ballBody.position.set(
+    delivery.start.x,
+    delivery.start.y,
+    delivery.start.z,
+  );
+  ballBody.velocity.set(
+    delivery.velocity.x,
+    delivery.velocity.y,
+    delivery.velocity.z,
+  );
+  ballBody.angularVelocity.set(-6, (Math.random() - 0.5) * 4, 0);
+  ballBody.wakeUp();
+  ball.visible = true;
+  ball.position.copy(ballBody.position);
+
+  // Release flash
+  releaseFlash.material.opacity = 0.9;
+
+  if (screen === "play") audio.playRelease();
+
+  // Autopilot target for attract mode (slight imperfection)
+  autoTarget.set(
+    delivery.crossing.x + (Math.random() - 0.5) * 0.25,
+    delivery.crossing.y + (Math.random() - 0.5) * 0.25,
+    HANDS_Z,
+  );
 
   // Reset hands to open pose for the new round
   if (mixer) {
@@ -480,64 +590,80 @@ function startNewRound() {
     openActionR.reset().play();
     openActionL.reset().play();
   }
-
-  resetBall();
 }
 
-function resetBall() {
-  const THROWER_Z = -6;
-  ballBody.position.set(0, 1.5, THROWER_Z); // Raise origin height
+function onCatch() {
+  isBallCaught = true;
+  ballBody.sleep();
   ballBody.velocity.set(0, 0, 0);
   ballBody.angularVelocity.set(0, 0, 0);
-  ballBody.wakeUp();
 
-  const random = Math.random();
-  if (random < 0.2) {
-    swingType = "none";
-  } else if (random < 0.7) {
-    swingType = "normal";
-  } else {
-    swingType = "reverse";
+  effects.burst(ball.position);
+  effects.shake(0.5);
+
+  if (catchActionR && openActionR && catchActionL && openActionL) {
+    openActionR.stop();
+    openActionL.stop();
+    catchActionR.reset().play();
+    catchActionL.reset().play();
   }
 
-  const swingDelayMinZ = THROWER_Z + (camera.position.z - THROWER_Z) * 0.5;
-  const swingDelayMaxZ = THROWER_Z + (camera.position.z - THROWER_Z) * 0.7;
-  swingDelayZ =
-    Math.random() * (swingDelayMaxZ - swingDelayMinZ) + swingDelayMinZ;
-
-  const swingMagnitude = 2;
-  const swingDirection = Math.random() < 0.5 ? 1 : -1;
-  initialSwingForce.set(
-    swingType === "none" ? 0 : swingMagnitude * swingDirection,
-    0,
-    0,
-  );
-
-  const targetX = (Math.random() - 0.5) * 0.8;
-  const targetY = 1.3 + Math.random() * 0.4;
-  const targetZ = 4;
-  const targetPoint = new CANNON.Vec3(targetX, targetY, targetZ);
-  const startPoint = ballBody.position;
-  const gravity = world.gravity.y;
-
-  let timeOfFlight = 1.37;
-  if (swingType === "reverse") {
-    timeOfFlight /= 0.9;
+  if (screen === "play") {
+    catches++;
+    streak++;
+    multiplier = Math.min(1 + Math.floor(streak / 3), 5);
+    score += multiplier;
+    difficulty = Math.min(1, catches / 30);
+    const isScreamer =
+      Math.abs(delivery.swingDisp) > 0.6 || delivery.flightTime < 1.0;
+    ui.setScore(score);
+    ui.setStreak(streak, multiplier);
+    if (score > best) {
+      best = score;
+      hadNewBest = true;
+      ui.setBest(best);
+      try {
+        localStorage.setItem("slipcatch.best", String(best));
+      } catch (e) {}
+    }
+    stadium.setBest(best);
+    ui.popMessage(isScreamer ? "SCREAMER!" : "CAUGHT!", "good");
+    audio.playCatch();
+    audio.playCheer(Math.min(1, 0.4 + streak * 0.1));
+    stadium.triggerWave();
+    stadium.triggerFlashBurst();
+    stadium.setBoardMessage(isScreamer ? "SCREAMER!" : "CAUGHT!", 1500);
   }
+  setPhase("result");
+}
 
-  const dx = targetPoint.x - startPoint.x;
-  const dy = targetPoint.y - startPoint.y;
-  const dz = targetPoint.z - startPoint.z;
-
-  const vx = dx / timeOfFlight;
-  const vz = dz / timeOfFlight;
-  const vy = (dy - 0.5 * gravity * timeOfFlight * timeOfFlight) / timeOfFlight;
-
-  ballBody.velocity.set(vx, vy, vz);
-
-  // Visible spin so the seam rotation reads on the textured ball
-  ballBody.angularVelocity.set(-6, (Math.random() - 0.5) * 4, 0);
-  ball.position.copy(ballBody.position);
+function onDrop() {
+  ball.visible = false;
+  if (screen === "play") {
+    effects.shake(0.25);
+    streak = 0;
+    multiplier = 1;
+    lives--;
+    ui.setStreak(0, 1);
+    ui.setLives(lives, 3);
+    ui.popMessage("DROPPED", "bad");
+    audio.playDrop();
+    stadium.setBoardMessage("OOOH!", 1200);
+    if (lives <= 0) {
+      screen = "gameover";
+      const isNewBest = hadNewBest;
+      if (score > best) best = score;
+      try {
+        localStorage.setItem("slipcatch.best", String(best));
+      } catch (e) {}
+      stadium.setBest(best);
+      ui.setBest(best);
+      ui.showGameOver({ score, best, isNewBest, catches });
+      setPhase("result");
+      return;
+    }
+  }
+  setPhase("result");
 }
 
 // --- Animation Loop ---
@@ -562,68 +688,93 @@ function animate() {
 
   // Single delta read per frame, capped to survive tab-switch gaps
   const deltaTime = Math.min(clock.getDelta(), 0.1);
+  const elapsed = clock.elapsedTime;
 
-  world.step(1 / 60, deltaTime, 3);
+  if (!paused) {
+    phaseT += deltaTime;
 
-  if (isBallInPlay && ballBody.position.z > swingDelayZ) {
-    if (swingType === "normal") {
-      currentSwingForce.copy(initialSwingForce);
-    } else if (swingType === "reverse") {
-      // scale() allocates a new Vec3; keep a precomputed inverse instead
-      if (ballBody.position.z < 1.5) {
-        currentSwingForce.copy(initialSwingForce);
-      } else {
-        currentSwingForce.copy(initialSwingForce).scale(-1, currentSwingForce);
+    // --- Screen: attract-mode camera drift on the title ---
+    if (screen === "title") {
+      const t = elapsed;
+      camera.position.set(
+        Math.sin(t * 0.08) * 6,
+        5.5 + Math.sin(t * 0.05) * 0.8,
+        9 + Math.sin(t * 0.06) * 1.5,
+      );
+      camera.lookAt(0, -0.5, -7);
+    } else if (screen === "flyin") {
+      // easeInOutCubic flight to the slip pose
+      flyT = Math.min(flyT + deltaTime / FLY_DURATION, 1);
+      const e =
+        flyT < 0.5 ? 4 * flyT * flyT * flyT : 1 - Math.pow(-2 * flyT + 2, 3) / 2;
+      camera.position.lerpVectors(flyFrom.pos, PLAY_POS, e);
+      camera.quaternion.slerpQuaternions(flyFrom.quat, PLAY_QUAT, e);
+      if (flyT >= 1) {
+        screen = "play";
+        setPhase("ready");
+        ui.showHud();
       }
-    } else {
-      currentSwingForce.set(0, 0, 0);
     }
-    ballBody.applyForce(currentSwingForce);
-  }
 
-  // Only update ball position when necessary to reduce operations
-  if (!isBallCaught) {
-    ball.position.copy(ballBody.position);
-    ball.quaternion.copy(ballBody.quaternion);
-  } else if (isBallCaught && playerHands) {
-    // Keep ball attached to hands when caught
-    ball.position.copy(playerHands.position);
-    ball.position.z -= 0.2;
-    ball.position.y -= 0.15;
-  }
-
-  if (isBallInPlay && playerHands) {
-    const distance = playerHands.position.distanceTo(ball.position);
-    if (distance < 0.35) {
-      score++;
-      scoreElement.innerText = `Score: ${score}`;
-      isBallInPlay = false;
-      isBallCaught = true;
-
-      // Freeze ball physics
+    // --- Phase machine ---
+    if (phase === "ready") {
+      ball.visible = false;
       ballBody.sleep();
-      ballBody.velocity.set(0, 0, 0);
-      ballBody.angularVelocity.set(0, 0, 0);
+      ballBody.position.set(0, 1.5, -6);
+      if (phaseT >= readyTarget) {
+        setPhase("flight");
+        releaseBall();
+      }
+    } else if (phase === "flight") {
+      world.step(1 / 60, deltaTime, 3);
 
-      if (catchActionR && openActionR && catchActionL && openActionL) {
-        openActionR.stop();
-        openActionL.stop();
-        catchActionR.reset().play();
-        catchActionL.reset().play();
+      if (!isBallCaught) {
+        ball.position.copy(ballBody.position);
+        ball.quaternion.copy(ballBody.quaternion);
+      } else if (playerHands) {
+        // Keep ball attached to hands when caught
+        ball.position.copy(playerHands.position);
+        ball.position.z += 0.05;
+        ball.position.y -= 0.02;
       }
-      setTimeout(startNewRound, 1000);
-    } else {
-      // Only check out-of-bounds when the ball wasn't just caught,
-      // otherwise both branches fire and two restarts get scheduled
-      const playAreaWidth = 4;
-      if (
-        ball.position.z > 5 ||
-        ball.position.y < -0.9 ||
-        Math.abs(ball.position.x) > playAreaWidth / 2 + 0.5
-      ) {
-        isBallInPlay = false;
-        setTimeout(startNewRound, 1000);
+
+      // Attract autopilot: hands drift to the crossing
+      if (screen === "title" && playerHands) {
+        playerHands.position.lerp(autoTarget, Math.min(1, deltaTime * 4));
       }
+
+      if (playerHands && !isBallCaught) {
+        const distance = playerHands.position.distanceTo(ball.position);
+        if (distance < 0.35 && ballBody.position.z < HANDS_Z + 0.6) {
+          onCatch();
+        } else if (
+          ballBody.position.z > HANDS_Z + 0.7 ||
+          ballBody.position.y < -0.9 ||
+          Math.abs(ballBody.position.x) > handsWindow.xMax + 1.5
+        ) {
+          onDrop();
+        }
+      }
+    } else if (phase === "result") {
+      if (isBallCaught && playerHands) {
+        ball.position.copy(playerHands.position);
+        ball.position.z += 0.05;
+        ball.position.y -= 0.02;
+      }
+      if (phaseT >= 1.0 && screen !== "gameover") {
+        setPhase("ready");
+        ball.visible = false;
+      }
+    }
+
+    // Release flash decay
+    if (releaseFlash.material.opacity > 0) {
+      releaseFlash.material.opacity = Math.max(
+        0,
+        releaseFlash.material.opacity - deltaTime * 3,
+      );
+      const s = 0.5 + (0.9 - releaseFlash.material.opacity) * 1.5;
+      releaseFlash.scale.set(s, s, 1);
     }
   }
 
@@ -631,6 +782,19 @@ function animate() {
   if (mixer) {
     mixer.update(deltaTime);
   }
+
+  if (stadium) {
+    stadium.update(elapsed);
+  }
+  if (floodlights) {
+    floodlights.update(elapsed);
+  }
+  effects.update(
+    deltaTime,
+    ball.position,
+    phase === "flight" && !isBallCaught,
+  );
+  effects.applyShake();
 
   renderer.render(scene, camera);
   fpsMonitor.frame();
@@ -643,7 +807,7 @@ function animate() {
 const fpsMonitor = {
   frames: 0,
   lastTime: performance.now(),
-  enabled: new URLSearchParams(window.location.search).has("debug"),
+  enabled: debugMode,
 
   frame() {
     if (this.enabled) this.frames++;

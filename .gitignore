@@ -90,3 +90,8 @@ dev/
 # Package manager lock files (optional - keep if sharing with team)
 # package-lock.json
 # yarn.lock
+
+# Local test/QA artefacts
+.devin-review/
+.*-profile*/
+store-assets/
