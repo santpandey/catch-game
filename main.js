@@ -1,8 +1,8 @@
 import * as THREE from "three";
 // Import GLB assets so Vite includes them in the build output
 import handsModelUrl from "./assets/hands_model.glb?url";
-import handsAnimationsUrl from "./assets/hands_animations.glb?url";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { createHands } from "./src/hands.js";
 import * as CANNON from "cannon-es";
 import { setupStadium } from "./src/stadium.js";
 import { setupFloodlights } from "./src/lights.js";
@@ -27,14 +27,13 @@ let scene,
   renderer,
   world,
   playerHands,
+  hands,
   ball,
   ballBody,
-  mixer,
   ui,
   audio,
   effects,
   releaseFlash;
-let openActionR, catchActionR, openActionL, catchActionL;
 let stadium = null;
 let floodlights = null;
 
@@ -266,104 +265,15 @@ function init() {
     handsModelUrl,
     (gltf) => {
       console.log("Base model loaded successfully.");
-      playerHands = gltf.scene;
-      // ~0.26 m of hand at 0.8 m from camera ≈ 20% of frame height
-      playerHands.scale.set(0.22, 0.22, 0.22);
+      hands = createHands(gltf.scene);
+      playerHands = hands.group;
       const zone = deliveryZone();
       playerHands.position.set(
         (zone.xMin + zone.xMax) / 2,
         (zone.yMin + zone.yMax) / 2,
         HANDS_Z,
       );
-      playerHands.traverse((child) => {
-        if (child.isMesh && child.material) {
-          child.material.roughness = 0.55;
-          child.material.metalness = 0;
-        }
-      });
-
-      // Jersey sleeve fallback: only add procedural cuffs if the GLB
-      // doesn't already include them (re-export via Blender script)
-      const hasSleeves =
-        playerHands.getObjectByName("Sleeve.R") ||
-        playerHands.getObjectByName("Sleeve.L");
-      if (!hasSleeves) {
-        const sleeveMaterial = new THREE.MeshStandardMaterial({
-          color: 0x041c6b,
-          roughness: 0.7,
-        });
-        ["R", "L"].forEach((side) => {
-          const palm = playerHands.getObjectByName(`Palm.${side}`);
-          if (palm) {
-            const sleeve = new THREE.Mesh(
-              new THREE.CylinderGeometry(0.85, 0.95, 0.9, 24),
-              sleeveMaterial,
-            );
-            sleeve.rotation.x = Math.PI / 2;
-            sleeve.position.set(0, 0, -1.35);
-            palm.add(sleeve);
-          }
-        });
-      }
       scene.add(playerHands);
-
-      const animLoader = new GLTFLoader();
-      animLoader.load(
-        handsAnimationsUrl,
-        (animGltf) => {
-          console.log("Animations loaded successfully.");
-          mixer = new THREE.AnimationMixer(playerHands);
-          const clips = animGltf.animations;
-
-          const openClipR = THREE.AnimationClip.findByName(
-            clips,
-            "Pose-Open.R",
-          );
-          const catchClipR = THREE.AnimationClip.findByName(
-            clips,
-            "Pose-Catch.R",
-          );
-          const openClipL = THREE.AnimationClip.findByName(
-            clips,
-            "Pose-Open.L",
-          );
-          const catchClipL = THREE.AnimationClip.findByName(
-            clips,
-            "Pose-Catch.L",
-          );
-
-          if (openClipR && catchClipR && openClipL && catchClipL) {
-            openActionR = mixer.clipAction(openClipR);
-            catchActionR = mixer.clipAction(catchClipR);
-            openActionL = mixer.clipAction(openClipL);
-            catchActionL = mixer.clipAction(catchClipL);
-
-            openActionR.setLoop(THREE.LoopRepeat);
-            openActionL.setLoop(THREE.LoopRepeat);
-
-            // Slow down catch animations by 10% (0.9 timeScale = 10% slower)
-            catchActionR.timeScale = 0.9;
-            catchActionL.timeScale = 0.9;
-
-            openActionR.play();
-            openActionL.play();
-
-            catchActionR.setLoop(THREE.LoopOnce);
-            catchActionR.clampWhenFinished = true;
-            catchActionL.setLoop(THREE.LoopOnce);
-            catchActionL.clampWhenFinished = true;
-
-            playerHands.visible = true;
-            console.log("Animation actions created and hands are now visible.");
-          } else {
-            console.error("One or more animation clips are missing!");
-          }
-        },
-        undefined,
-        (error) => {
-          console.error("ERROR: Failed to load hands_animations.glb:", error);
-        },
-      );
     },
     undefined,
     (error) => {
@@ -592,12 +502,7 @@ function releaseBall() {
   );
 
   // Reset hands to open pose for the new round
-  if (mixer) {
-    catchActionR.stop();
-    catchActionL.stop();
-    openActionR.reset().play();
-    openActionL.reset().play();
-  }
+  if (hands) hands.reset();
 }
 
 function onCatch() {
@@ -609,12 +514,7 @@ function onCatch() {
   effects.burst(ball.position);
   effects.shake(0.5);
 
-  if (catchActionR && openActionR && catchActionL && openActionL) {
-    openActionR.stop();
-    openActionL.stop();
-    catchActionR.reset().play();
-    catchActionL.reset().play();
-  }
+  if (hands) hands.catch();
 
   if (screen === "play") {
     catches++;
@@ -647,6 +547,7 @@ function onCatch() {
 
 function onDrop() {
   ball.visible = false;
+  if (hands) hands.drop();
   if (screen === "play") {
     effects.shake(0.25);
     streak = 0;
@@ -695,7 +596,9 @@ function animate() {
   lastFrameTime = currentTime;
 
   // Single delta read per frame, capped to survive tab-switch gaps
-  const deltaTime = Math.min(clock.getDelta(), 0.1);
+  // (window.__timeScale is a test-only slow-motion knob, default 1)
+  const deltaTime =
+    Math.min(clock.getDelta(), 0.1) * ((debugMode && window.__timeScale) || 1);
   const elapsed = clock.elapsedTime;
 
   if (!paused) {
@@ -739,11 +642,9 @@ function animate() {
       if (!isBallCaught) {
         ball.position.copy(ballBody.position);
         ball.quaternion.copy(ballBody.quaternion);
-      } else if (playerHands) {
+      } else if (hands) {
         // Keep ball attached to hands when caught
-        ball.position.copy(playerHands.position);
-        ball.position.z += 0.05;
-        ball.position.y -= 0.02;
+        hands.ballAnchor(ball.position);
       }
 
       // Attract autopilot: hands drift to the crossing
@@ -764,10 +665,8 @@ function animate() {
         }
       }
     } else if (phase === "result") {
-      if (isBallCaught && playerHands) {
-        ball.position.copy(playerHands.position);
-        ball.position.z += 0.05;
-        ball.position.y -= 0.02;
+      if (isBallCaught && hands) {
+        hands.ballAnchor(ball.position);
       }
       if (phaseT >= 1.0 && screen !== "gameover") {
         setPhase("ready");
@@ -786,9 +685,13 @@ function animate() {
     }
   }
 
-  // Update the animation mixer on every frame
-  if (mixer) {
-    mixer.update(deltaTime);
+  // Update the hands (curl timeline, catch give) on every frame
+  if (hands) {
+    hands.update(
+      deltaTime,
+      ball.position,
+      phase === "flight" && !isBallCaught,
+    );
   }
 
   if (stadium) {
