@@ -11,6 +11,7 @@ import { createUI } from "./src/ui.js";
 import { createAudio } from "./src/audio.js";
 import {
   planDelivery,
+  catchZone,
   HANDS_Z,
   BALL_MASS,
 } from "./src/delivery.js";
@@ -268,9 +269,10 @@ function init() {
       playerHands = gltf.scene;
       // ~0.26 m of hand at 0.8 m from camera ≈ 20% of frame height
       playerHands.scale.set(0.22, 0.22, 0.22);
+      const zone = deliveryZone();
       playerHands.position.set(
-        (handsWindow.xMin + handsWindow.xMax) / 2,
-        (handsWindow.yMin + handsWindow.yMax) / 2,
+        (zone.xMin + zone.xMax) / 2,
+        (zone.yMin + zone.yMax) / 2,
         HANDS_Z,
       );
       playerHands.traverse((child) => {
@@ -544,16 +546,22 @@ function setPhase(next) {
   if (next === "ready") readyTarget = 0.7 + Math.random() * 0.7;
 }
 
+// Deliveries land low and central in the visible window (margins keep the
+// hands model on screen)
+function deliveryZone() {
+  return catchZone(
+    {
+      xMin: handsWindow.xMin + 0.15,
+      xMax: handsWindow.xMax - 0.15,
+      yMin: handsWindow.yMin + 0.2,
+      yMax: handsWindow.yMax - 0.15,
+    },
+    difficulty,
+  );
+}
+
 function releaseBall() {
-  // Deliveries aimed into the visible window, shrunk by a margin
-  const margin = 0.15;
-  const win = {
-    xMin: handsWindow.xMin + margin,
-    xMax: handsWindow.xMax - margin,
-    yMin: handsWindow.yMin + margin,
-    yMax: handsWindow.yMax - margin,
-  };
-  delivery = planDelivery({ difficulty, window: win });
+  delivery = planDelivery({ difficulty, window: deliveryZone() });
   isBallCaught = false;
 
   ballBody.position.set(

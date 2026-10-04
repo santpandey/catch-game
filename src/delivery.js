@@ -48,6 +48,21 @@ export function simulateCrossing(plan) {
   );
 }
 
+// Target zone inside the visible window: horizontally central and low on
+// screen so the hands stay near the bottom of the frame; widens a little
+// with difficulty.
+export function catchZone(win, difficulty = 0) {
+  const d = Math.min(1, Math.max(0, difficulty));
+  const midX = (win.xMin + win.xMax) / 2;
+  const halfW = (win.xMax - win.xMin) * lerp(0.25, 0.35, d);
+  return {
+    xMin: midX - halfW,
+    xMax: midX + halfW,
+    yMin: win.yMin,
+    yMax: win.yMin + (win.yMax - win.yMin) * lerp(0.3, 0.4, d),
+  };
+}
+
 export function planDelivery({ difficulty = 0, window, rng = Math.random }) {
   const d = Math.min(1, Math.max(0, difficulty));
 
@@ -63,13 +78,13 @@ export function planDelivery({ difficulty = 0, window, rng = Math.random }) {
   const swingType = roll < 0.2 ? "none" : roll < 0.7 ? "normal" : "reverse";
   if (swingType === "reverse") T /= 0.9;
 
-  // Swing start: 50-70% down the leg normally. For reverse, start well
-  // before the flip (z = 1.5) so pre/post-flip legs don't cancel and the
-  // solver doesn't need absurd forces.
+  // Swing start: 35-55% down the leg normally (a long, readable curve).
+  // For reverse, start well before the flip (z = 1.5) so pre/post-flip
+  // legs don't cancel and the solver doesn't need absurd forces.
   const swingStartZ =
     swingType === "reverse"
-      ? lerp(-1.5, -0.5, rng())
-      : THROWER_Z + (5 - THROWER_Z) * lerp(0.5, 0.7, rng());
+      ? lerp(-2.5, -1.5, rng())
+      : THROWER_Z + (5 - THROWER_Z) * lerp(0.35, 0.55, rng());
   const flipZ = swingType === "reverse" ? REVERSE_FLIP_Z : null;
 
   // Visible lateral displacement: [0.25,0.6] m at d=0 to [0.4,0.9] at d=1
@@ -89,7 +104,10 @@ export function planDelivery({ difficulty = 0, window, rng = Math.random }) {
   // n*dt >= T — so solve vy for semi-implicit Euler exactly:
   // y = vy*dt*n + g*dt^2*n(n+1)/2
   let vz = (HANDS_Z - THROWER_Z) / T;
-  const nSteps = Math.ceil((HANDS_Z - THROWER_Z) / (vz * PHYSICS_DT));
+  // Count steps with the same float accumulation as simulate() — a
+  // closed-form ceil() can be off by one and land the ball ~10 cm low
+  let nSteps = 0;
+  for (let z = THROWER_Z; z < HANDS_Z; z += vz * PHYSICS_DT) nSteps++;
   const vy =
     (cy -
       START_Y -
