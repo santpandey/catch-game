@@ -38,6 +38,26 @@ function speakerIcon(muted) {
   return svg;
 }
 
+function pauseIcon(paused) {
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("width", "24");
+  svg.setAttribute("height", "24");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  // paused -> play triangle, playing -> two bars
+  const paths = paused
+    ? ["M7 5l12 7-12 7z"]
+    : ["M7 5h3.4v14H7z", "M13.6 5H17v14h-3.4z"];
+  paths.forEach((d) => {
+    const p = document.createElementNS(SVG_NS, "path");
+    p.setAttribute("d", d);
+    p.setAttribute("fill", "currentColor");
+    svg.appendChild(p);
+  });
+  return svg;
+}
+
 function restartAnim(node, className) {
   node.classList.remove(className);
   void node.offsetWidth; // force reflow so the animation re-runs
@@ -68,7 +88,7 @@ function copyText(text) {
   });
 }
 
-export function createUI({ onStart, onRestart, onToggleMute } = {}) {
+export function createUI({ onStart, onRestart, onToggleMute, onTogglePause } = {}) {
   let root = document.getElementById("ui");
   if (!root) {
     root = el("div");
@@ -225,8 +245,75 @@ export function createUI({ onStart, onRestart, onToggleMute } = {}) {
     muteBtn.title = isMuted ? "Unmute" : "Mute";
   }
   setMuted(false);
+  muteBtn.addEventListener("touchstart", (e) => e.stopPropagation());
 
-  root.append(title, hud, pops, over, muteBtn);
+  // ---------- Pause ----------
+  let pauseOpen = false;
+
+  const pauseBtn = el("button", "sc-mute sc-pause");
+  pauseBtn.type = "button";
+  pauseBtn.hidden = true;
+  pauseBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (typeof onTogglePause === "function") onTogglePause();
+  });
+  pauseBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
+  pauseBtn.addEventListener("touchstart", (e) => e.stopPropagation());
+
+  function setPaused(isPaused) {
+    pauseBtn.textContent = "";
+    pauseBtn.appendChild(pauseIcon(!!isPaused));
+    pauseBtn.setAttribute("aria-label", isPaused ? "Resume" : "Pause");
+    pauseBtn.setAttribute("aria-pressed", isPaused ? "true" : "false");
+    pauseBtn.title = isPaused ? "Resume" : "Pause";
+  }
+  setPaused(false);
+
+  const pauseOver = el("div", "sc-overlay sc-paused is-hidden");
+  pauseOver.setAttribute("role", "dialog");
+  pauseOver.setAttribute("aria-modal", "true");
+  const pauseCard = el("div", "sc-card");
+  pauseCard.appendChild(el("h2", "sc-over__heading", "Paused"));
+  const pauseActions = el("div", "sc-actions");
+  const resumeBtn = el("button", "sc-btn sc-btn--primary", "Resume");
+  resumeBtn.type = "button";
+  const pauseRestartBtn = el("button", "sc-btn sc-btn--ghost", "Restart");
+  pauseRestartBtn.type = "button";
+  pauseActions.append(resumeBtn, pauseRestartBtn);
+  pauseCard.append(pauseActions, el("p", "sc-hint", "P / Esc to resume"));
+  pauseOver.appendChild(pauseCard);
+
+  resumeBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (typeof onTogglePause === "function") onTogglePause();
+  });
+  pauseRestartBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (typeof onRestart === "function") onRestart();
+  });
+  for (const b of [resumeBtn, pauseRestartBtn]) {
+    b.addEventListener("pointerdown", (e) => e.stopPropagation());
+    b.addEventListener("touchstart", (e) => e.stopPropagation());
+  }
+
+  function showPause() {
+    pauseOpen = true;
+    show(pauseOver);
+  }
+
+  function hidePause() {
+    pauseOpen = false;
+    hide(pauseOver);
+    if (document.activeElement && pauseOver.contains(document.activeElement)) {
+      document.activeElement.blur();
+    }
+  }
+
+  function setPauseAvailable(avail) {
+    pauseBtn.hidden = !avail;
+  }
+
+  root.append(title, hud, pops, over, pauseOver, pauseBtn, muteBtn);
 
   // ---------- Keyboard ----------
   document.addEventListener("keydown", (e) => {
@@ -235,6 +322,10 @@ export function createUI({ onStart, onRestart, onToggleMute } = {}) {
     // Focused buttons handle Enter/Space natively via their click event.
     const t = e.target;
     if (t && t.closest && t.closest("button, a, input, textarea, select")) return;
+    if (pauseOpen) {
+      if (typeof onTogglePause === "function") onTogglePause();
+      return;
+    }
     if (state === "title") start(e);
     else if (state === "gameover") restart(e);
   });
@@ -371,5 +462,9 @@ export function createUI({ onStart, onRestart, onToggleMute } = {}) {
     showGameOver,
     hideGameOver,
     setMuted,
+    showPause,
+    hidePause,
+    setPauseAvailable,
+    setPaused,
   };
 }

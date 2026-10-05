@@ -44,7 +44,11 @@ let floodlights = null;
 let screen = "title";
 let phase = "ready";
 let phaseT = 0;
-let paused = false;
+let hiddenPaused = false; // tab hidden
+let userPaused = false; // player toggle (P / Esc / pause button)
+let paused = false; // either source
+let pauseRenderedOnce = false;
+let gameElapsed = 0; // unpaused game-time seconds for ambient anims
 let score = 0;
 let streak = 0;
 let multiplier = 1;
@@ -284,7 +288,7 @@ function init() {
 
   // UI + audio
   audio = createAudio();
-  ui = createUI({ onStart, onRestart, onToggleMute });
+  ui = createUI({ onStart, onRestart, onToggleMute, onTogglePause: togglePause });
   ui.setMuted(audio.isMuted());
   ui.setBest(best);
 
@@ -294,6 +298,10 @@ function init() {
   document.addEventListener("touchstart", onTouchMove, { passive: false });
   document.addEventListener("touchmove", onTouchMove, { passive: false });
   document.addEventListener("visibilitychange", onVisibilityChange);
+  document.addEventListener("keydown", (e) => {
+    if (e.repeat) return;
+    if (e.code === "KeyP" || e.code === "Escape") togglePause();
+  });
 
   computeHandsWindow();
 
@@ -317,6 +325,7 @@ function init() {
       },
       scene,
       camera,
+      renderer,
     };
     document.addEventListener("keydown", (e) => {
       if (!stadium) return;
@@ -376,10 +385,15 @@ function moveHands(clientX, clientY) {
 }
 
 function onMouseMove(event) {
+  if (paused) return;
   moveHands(event.clientX, event.clientY);
 }
 
 function onTouchMove(event) {
+  const t = event.target;
+  // Let taps on UI buttons reach them
+  if (t && t.closest && t.closest("#ui button")) return;
+  if (paused) return;
   event.preventDefault();
   const touch = event.touches[0];
   if (touch) {
@@ -387,16 +401,47 @@ function onTouchMove(event) {
   }
 }
 
-function onVisibilityChange() {
-  if (document.hidden) {
-    paused = true;
+// --- Pause ---
+function togglePause(next) {
+  if (screen !== "play") return;
+  const want = next === undefined ? !userPaused : !!next;
+  if (want === userPaused) return;
+  userPaused = want;
+  paused = hiddenPaused || userPaused;
+  if (userPaused) {
+    ui.showPause();
     audio.suspend();
   } else {
-    paused = false;
-    audio.resume();
-    // Discard the paused gap so physics/timers don't lurch forward
-    clock.getDelta();
-    lastFrameTime = performance.now();
+    ui.hidePause();
+    if (!hiddenPaused) {
+      audio.resume();
+      // Discard the paused gap so physics/timers don't lurch forward
+      clock.getDelta();
+      lastFrameTime = performance.now();
+    }
+  }
+  ui.setPaused(userPaused);
+}
+
+function onVisibilityChange() {
+  if (document.hidden) {
+    hiddenPaused = true;
+    paused = true;
+    // Come back to the pause overlay, not a ball already in flight
+    if (screen === "play" && !userPaused) {
+      userPaused = true;
+      ui.showPause();
+      ui.setPaused(true);
+    }
+    audio.suspend();
+  } else {
+    hiddenPaused = false;
+    paused = userPaused;
+    if (!userPaused) {
+      audio.resume();
+      clock.getDelta();
+      lastFrameTime = performance.now();
+    }
   }
 }
 
@@ -412,6 +457,7 @@ function startPlay(skipFly) {
     phase = "ready";
     phaseT = 0;
     ui.showHud();
+    ui.setPauseAvailable(true);
   } else {
     flyFrom.pos.copy(camera.position);
     flyFrom.quat.copy(camera.quaternion);
@@ -432,6 +478,10 @@ function onRestart() {
   catches = 0;
   difficulty = 0;
   hadNewBest = false;
+  userPaused = false;
+  paused = hiddenPaused;
+  ui.hidePause();
+  ui.setPauseAvailable(true);
   ui.hideGameOver();
   ui.setScore(0);
   ui.setStreak(0, 1);
@@ -561,6 +611,10 @@ function onDrop() {
     stadium.setBoardMessage("OOOH!", 1200);
     if (lives <= 0) {
       screen = "gameover";
+      userPaused = false;
+      paused = hiddenPaused;
+      ui.hidePause();
+      ui.setPauseAvailable(false);
       const isNewBest = hadNewBest;
       if (score > best) best = score;
       try {
@@ -602,6 +656,18 @@ function animate() {
     Math.min(clock.getDelta(), 0.1) * ((debugMode && window.__timeScale) || 1);
   const elapsed = clock.elapsedTime;
 
+  // Paused: keep the canvas' last frame on screen — render it once, then
+  // idle so a paused game costs no GPU.
+  if (paused) {
+    if (!pauseRenderedOnce) {
+      pauseRenderedOnce = true;
+      renderer.render(scene, camera);
+    }
+    return;
+  }
+  pauseRenderedOnce = false;
+  gameElapsed += deltaTime;
+
   if (!paused) {
     phaseT += deltaTime;
 
@@ -625,6 +691,7 @@ function animate() {
         screen = "play";
         setPhase("ready");
         ui.showHud();
+        ui.setPauseAvailable(true);
       }
     }
 
@@ -696,10 +763,10 @@ function animate() {
   }
 
   if (stadium) {
-    stadium.update(elapsed);
+    stadium.update(gameElapsed);
   }
   if (floodlights) {
-    floodlights.update(elapsed);
+    floodlights.update(gameElapsed);
   }
   effects.update(
     deltaTime,

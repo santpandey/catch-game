@@ -192,7 +192,10 @@ body {
   align-items: flex-start;
   gap: clamp(14px, 3vw, 48px);
   padding: clamp(10px, 1.6vw, 22px) clamp(12px, 2vw, 28px);
-  padding-right: calc(clamp(12px, 2vw, 28px) + clamp(44px, 3.4vw, 60px) + 12px);
+  padding-right: calc(
+    clamp(12px, 2vw, 28px) + 2 * (clamp(44px, 3.4vw, 60px) +
+      clamp(8px, 1vw, 14px)) + 12px
+  );
   pointer-events: none;
   background: linear-gradient(180deg, rgba(10, 22, 40, 0.7) 0%, rgba(10, 22, 40, 0) 100%);
   text-shadow: var(--sc-shadow);
@@ -580,6 +583,39 @@ body {
 .sc-mute svg {
   width: 55%;
   height: 55%;
+}
+
+/* ---------- Pause ---------- */
+.sc-pause {
+  right: calc(
+    clamp(12px, 2vw, 28px) + clamp(44px, 3.4vw, 60px) +
+      clamp(8px, 1vw, 14px)
+  );
+}
+
+.sc-overlay.sc-paused {
+  z-index: 4;
+  background: radial-gradient(
+    ellipse at 50% 50%,
+    rgba(10, 22, 40, 0.5) 0%,
+    rgba(10, 22, 40, 0.8) 100%
+  );
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.sc-overlay.sc-paused .sc-actions {
+  margin-top: clamp(16px, 3vw, 26px);
+}
+
+.sc-overlay.sc-paused .sc-hint {
+  margin: clamp(12px, 2vw, 18px) 0 0;
+}
+
+@media (pointer: coarse) {
+  .sc-overlay.sc-paused .sc-hint {
+    display: none;
+  }
 }
 
 /* ---------- Small screens ---------- */

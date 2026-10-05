@@ -159,8 +159,8 @@ export function createHands({ left, right }) {
   group.add(model);
 
   const bones = [];
-  let gateDiff = 0;
   const wrists = [];
+  let gateDiff = 0;
 
   for (const [side, gltfScene] of [
     ["right", right],
@@ -189,43 +189,27 @@ export function createHands({ left, right }) {
   }
   console.log("hands: re-parent gate maxDiff =", gateDiff.toExponential(3));
 
-  // --- Forearm sleeves: children of each wrist, extending away from palm ---
-  const sleeveMat = new THREE.MeshStandardMaterial({
-    color: 0x1b3f9e,
-    roughness: 0.7,
-  });
-  const bandMat = new THREE.MeshStandardMaterial({
-    color: 0x4a6fd4,
-    roughness: 0.6,
-  });
+  // --- Wrist caps: close the hollow tube end with a rounded skin dome ---
   model.updateMatrixWorld(true);
   for (const wrist of wrists) {
-    // Forearm direction in world = down and slightly toward the viewer
+    // Direction out of the wrist (forearm side) in world space
     const dirWorld = new THREE.Vector3(0, -0.94, 0.34).normalize();
     const wristPos = wrist.getWorldPosition(new THREE.Vector3());
     const dirLocal = wrist
       .worldToLocal(wristPos.clone().add(dirWorld))
       .normalize();
-    const sleeve = new THREE.Group();
-    sleeve.quaternion.setFromUnitVectors(
-      new THREE.Vector3(0, -1, 0),
-      dirLocal,
+    const capMat = new THREE.MeshStandardMaterial();
+    skinMaterial(capMat);
+    const cap = new THREE.Mesh(
+      new THREE.SphereGeometry(0.024, 16, 12),
+      capMat,
     );
-    const tube = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.036, 0.028, 0.19, 20),
-      sleeveMat,
-    );
-    tube.position.y = -0.095;
-    const band = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.037, 0.037, 0.02, 20),
-      bandMat,
-    );
-    band.position.y = -0.012;
-    sleeve.add(tube, band);
-    wrist.add(sleeve);
+    cap.scale.set(1, 0.5, 0.75);
+    cap.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), dirLocal);
+    cap.position.copy(dirLocal).multiplyScalar(0.015);
+    wrist.add(cap);
   }
 
-  // --- Skin on the hand meshes only (sleeves keep their jersey material) ---
   for (const root of [left, right]) {
     root.traverse((c) => {
       if (c.isSkinnedMesh && c.material) skinMaterial(c.material);
