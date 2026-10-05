@@ -55,11 +55,10 @@ npm run preview
 ```
 catch-game/
 ├── assets/                     # Game assets
-│   ├── hands_model.glb        # 3D hand model
-│   ├── hands_animations.glb   # Hand animation clips
-│   ├── stadium.png            # Stadium backdrop texture
+│   ├── hands/                 # WebXR generic hand models (MIT)
+│   ├── stadium.webp           # Stadium backdrop texture
 │   └── ...                    # Other asset files
-├── blender_*.py               # Blender export scripts
+├── src/                       # Game modules (stadium, hands, delivery, ...)
 ├── public/                    # Static files
 ├── index.html                 # Main HTML file
 ├── main.js                    # Core game logic
