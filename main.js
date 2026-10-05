@@ -1,6 +1,7 @@
 import * as THREE from "three";
 // Import GLB assets so Vite includes them in the build output
-import handsModelUrl from "./assets/hands_model.glb?url";
+import handsLeftUrl from "./assets/hands/xr-hand-left.glb?url";
+import handsRightUrl from "./assets/hands/xr-hand-right.glb?url";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { createHands } from "./src/hands.js";
 import * as CANNON from "cannon-es";
@@ -259,13 +260,15 @@ function init() {
     scene.add(releaseFlash);
   }
 
-  // Player Hands
+  // Player Hands (WebXR generic-hand model, MIT)
   const loader = new GLTFLoader();
-  loader.load(
-    handsModelUrl,
-    (gltf) => {
-      console.log("Base model loaded successfully.");
-      hands = createHands(gltf.scene);
+  Promise.all([
+    loader.loadAsync(handsLeftUrl),
+    loader.loadAsync(handsRightUrl),
+  ])
+    .then(([l, r]) => {
+      console.log("Hand models loaded successfully.");
+      hands = createHands({ left: l.scene, right: r.scene });
       playerHands = hands.group;
       const zone = deliveryZone();
       playerHands.position.set(
@@ -274,12 +277,10 @@ function init() {
         HANDS_Z,
       );
       scene.add(playerHands);
-    },
-    undefined,
-    (error) => {
+    })
+    .catch((error) => {
       console.error("An error happened while loading the model:", error);
-    },
-  );
+    });
 
   // UI + audio
   audio = createAudio();
