@@ -391,8 +391,9 @@ function onMouseMove(event) {
 
 function onTouchMove(event) {
   const t = event.target;
-  // Let taps on UI buttons reach them
-  if (t && t.closest && t.closest("#ui button")) return;
+  // Taps on the UI overlays (title, pause, game over, buttons) must reach them
+  // as clicks; preventDefault on touchstart would suppress the click on phones
+  if (t && t.closest && t.closest("#ui")) return;
   if (paused) return;
   event.preventDefault();
   const touch = event.touches[0];
