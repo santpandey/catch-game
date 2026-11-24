@@ -112,58 +112,135 @@ function createBallTexture() {
       Math.random() > 0.5 ? "rgba(255,140,140,0.05)" : "rgba(40,0,0,0.08)";
     ctx.fillRect(Math.random() * 128, Math.random() * 128, 2, 2);
   }
+  // Groove shading along the texture equator (v = 0.5). The sphere mesh is
+  // rotated so this line coincides with the seam ring plane — the leather
+  // reads as pressed into a channel either side of the seam, like a real
+  // ball. Spin about the seam normal keeps the equator invariant.
+  const eq = 64;
+  const groove = ctx.createLinearGradient(0, eq - 13, 0, eq + 13);
+  groove.addColorStop(0, "rgba(0,0,0,0)");
+  groove.addColorStop(0.28, "rgba(60,0,0,0.38)");
+  groove.addColorStop(0.5, "rgba(30,0,0,0.5)");
+  groove.addColorStop(0.72, "rgba(60,0,0,0.38)");
+  groove.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = groove;
+  ctx.fillRect(0, eq - 13, 128, 26);
+
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
 }
 
 // --- Seam Stitch Texture ---
-// A real ball's seam is raised twine cross-stitched along the cord: rows of
-// diagonal stitches leaning alternately, giving the herringbone/net look.
-// Painted once on a canvas; used as both the colour map and the bump map.
+// Reproduces the real thing: the band is red leather, and the white is only
+// the thread. Six rows total — a dense cross-stitched centre cord over the
+// leather join, flanked by pairs of simple chain-stitch rows — each stitch a
+// discrete slanted strand with red showing through the gaps, hand-stitch
+// jitter included. Painted once at startup (zero per-frame cost) and reused
+// as both colour map and bump map; texture size and draw calls unchanged.
 function createSeamTexture() {
   const canvas = document.createElement("canvas");
   canvas.width = 1024;
   canvas.height = 128;
   const ctx = canvas.getContext("2d");
-  // Ivory twine base with a soft vertical falloff so the cord reads rounded
-  ctx.fillStyle = "#efe7d4";
-  ctx.fillRect(0, 0, 1024, 128);
-  const grad = ctx.createLinearGradient(0, 0, 0, 128);
-  grad.addColorStop(0, "rgba(120,100,70,0.55)");
-  grad.addColorStop(0.25, "rgba(255,252,240,0.25)");
-  grad.addColorStop(0.5, "rgba(255,255,250,0.4)");
-  grad.addColorStop(0.75, "rgba(255,252,240,0.25)");
-  grad.addColorStop(1, "rgba(120,100,70,0.55)");
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, 1024, 128);
 
-  // Cross-stitch lattice: each unit is an X of two strands, chained into a
-  // continuous zigzag net — the raised cross-hatch of a real seam. Shadow
-  // pass under a lit pass makes the thread read as sitting on the cord.
-  const units = 46; // stitch Xs around the ring (texture wraps once)
-  const uw = 1024 / units;
+  // Red leather base — slightly darker than the ball since the seam band
+  // sits in the pressed groove, darkening further towards the edges.
+  ctx.fillStyle = "#a01017";
+  ctx.fillRect(0, 0, 1024, 128);
+  const bed = ctx.createLinearGradient(0, 0, 0, 128);
+  bed.addColorStop(0, "rgba(25,0,0,0.55)");
+  bed.addColorStop(0.3, "rgba(25,0,0,0.15)");
+  bed.addColorStop(0.5, "rgba(255,60,60,0.08)");
+  bed.addColorStop(0.7, "rgba(25,0,0,0.15)");
+  bed.addColorStop(1, "rgba(25,0,0,0.55)");
+  ctx.fillStyle = bed;
+  ctx.fillRect(0, 0, 1024, 128);
+  // leather grain speckle, matching the ball texture
+  for (let i = 0; i < 1200; i++) {
+    ctx.fillStyle =
+      Math.random() > 0.5 ? "rgba(255,140,140,0.05)" : "rgba(40,0,0,0.09)";
+    ctx.fillRect(Math.random() * 1024, Math.random() * 128, 2, 2);
+  }
+
+  // Deterministic jitter so the texture is stable frame to frame
+  let seed = 7;
+  const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+
   ctx.lineCap = "round";
-  for (let i = 0; i <= units; i++) {
-    const x0 = i * uw;
-    for (const [dir, lit] of [
-      [1, "rgba(244,236,216,0.95)"],
-      [-1, "rgba(255,253,242,0.98)"],
-    ]) {
-      ctx.strokeStyle = "rgba(96,74,46,0.9)";
-      ctx.lineWidth = 7;
-      ctx.beginPath();
-      ctx.moveTo(x0 - dir * uw * 0.5 + 1.2, 17.2);
-      ctx.lineTo(x0 + dir * uw * 0.5 + 1.2, 113.2);
-      ctx.stroke();
-      ctx.strokeStyle = lit;
-      ctx.lineWidth = 4.5;
-      ctx.beginPath();
-      ctx.moveTo(x0 - dir * uw * 0.5, 16);
-      ctx.lineTo(x0 + dir * uw * 0.5, 112);
-      ctx.stroke();
+  // One hand-stitched strand: shadow pass then lit pass, slight taper.
+  function stitch(x, y, len, angle, w, bright) {
+    const dx = Math.cos(angle) * len * 0.5;
+    const dy = Math.sin(angle) * len * 0.5;
+    ctx.strokeStyle = "rgba(70,25,10,0.55)";
+    ctx.lineWidth = w + 1.4;
+    ctx.beginPath();
+    ctx.moveTo(x - dx + 1, y - dy + 1.2);
+    ctx.lineTo(x + dx + 1, y + dy + 1.2);
+    ctx.stroke();
+    ctx.strokeStyle = bright;
+    ctx.lineWidth = w;
+    ctx.beginPath();
+    ctx.moveTo(x - dx, y - dy);
+    ctx.lineTo(x + dx, y + dy);
+    ctx.stroke();
+  }
+
+  // Chain-stitch rows: discrete slanted strands, evenly spaced with jitter.
+  // ~80 stitches around the ring, like the real thing. Rows are symmetric
+  // about the canvas centre (v=64); the wrap-shift at the end moves them
+  // onto the tube crown — the only half of the tube outside the sphere.
+  const rows = [
+    { v: 64 - 23, n: 80, len: 11, lean: 0.5, w: 4.0 },
+    { v: 64 + 23, n: 80, len: 11, lean: 0.5, w: 4.0 },
+    { v: 64 - 12, n: 80, len: 11, lean: 0.5, w: 4.2 },
+    { v: 64 + 12, n: 80, len: 11, lean: 0.5, w: 4.2 },
+  ];
+  for (const row of rows) {
+    const step = 1024 / row.n;
+    for (let i = 0; i < row.n; i++) {
+      const x = i * step + step * 0.5 + (rand() - 0.5) * 1.6;
+      const y = row.v + (rand() - 0.5) * 1.4;
+      const lean = row.lean + (rand() - 0.5) * 0.16;
+      stitch(x, y, row.len, Math.PI / 2 - lean, row.w, "rgba(253,248,232,0.98)");
     }
   }
+
+  // Centre cord: two interlocked rows of cross-stitch over the leather join.
+  // Strands alternate lean to form the X lattice, tighter and brighter here.
+  const cn = 72;
+  const cstep = 1024 / cn;
+  for (let i = 0; i < cn; i++) {
+    const x = i * cstep + cstep * 0.5 + (rand() - 0.5) * 1.2;
+    const lean = 0.62 + (rand() - 0.5) * 0.12;
+    // one strand of the X
+    stitch(x, 58.5, 13, Math.PI / 2 - lean, 4.3, "rgba(255,251,236,0.99)");
+    // opposite-lean strand offset half a step so the crosses interlock
+    stitch(
+      x + cstep * 0.5,
+      69.5,
+      13,
+      Math.PI / 2 + lean,
+      4.3,
+      "rgba(255,251,236,0.99)",
+    );
+  }
+  // leather join line peeking through the centre cord
+  ctx.fillStyle = "rgba(40,0,0,0.35)";
+  ctx.fillRect(0, 63, 1024, 2);
+
+  // Torus UVs put the tube crown — the half of the seam actually outside
+  // the sphere — at the v wrap boundary (uv.y = 0/1). The artwork is
+  // painted centred in the canvas, so wrap-shift it by half the height to
+  // centre it on that boundary.
+  const off = document.createElement("canvas");
+  off.width = 1024;
+  off.height = 128;
+  off.getContext("2d").drawImage(canvas, 0, 0);
+  ctx.clearRect(0, 0, 1024, 128);
+  ctx.drawImage(off, 0, 64);
+  ctx.drawImage(off, 0, -64);
+
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.wrapS = THREE.RepeatWrapping;
@@ -287,6 +364,11 @@ function init() {
     emissiveIntensity: 0.15,
   });
   const ballSphere = new THREE.Mesh(ballGeometry, ballMaterial);
+  // Sphere UV equator lies in the XZ plane by default; rotating the mesh
+  // about Z puts it in the YZ plane — the same plane as the seam ring, so
+  // the texture's groove shading wraps the ball right at the seam. Rotation
+  // about the seam normal (X) leaves that plane invariant during backspin.
+  ballSphere.rotation.z = Math.PI / 2;
   ball.add(ballSphere);
 
   const seamGeometry = new THREE.TorusGeometry(0.1, 0.012, 12, 60);
