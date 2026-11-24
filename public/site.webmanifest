@@ -1,0 +1,31 @@
+{
+  "id": "./",
+  "name": "Slip Catch – Cricket Catching Game",
+  "short_name": "Slip Catch",
+  "description": "Practice cricket slip catches in a floodlit 3D stadium. Track the swing, cup your hands, keep the streak alive.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#0a1628",
+  "theme_color": "#0a1628",
+  "categories": ["games", "sports", "entertainment"],
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

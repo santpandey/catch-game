@@ -9,9 +9,13 @@
     "preview": "vite preview",
     "convert-images": "node convert-to-webp.js",
     "generate-icons": "node generate-icons.js",
+    "generate-og": "node tools/generate-og-image.js",
+    "generate-itch": "node tools/generate-itch-assets.js",
+    "package-itch": "npm run build && cd dist && zip -qr ../slip-catch.zip .",
     "capture-store": "node tools/capture-store-assets.js"
   },
   "devDependencies": {
+    "playwright": "^1.65.1",
     "sharp": "^0.33.0",
     "vite": "^5.2.0"
   },

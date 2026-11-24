@@ -119,6 +119,10 @@ export function createEffects(scene, camera) {
   scene.add(burst);
 
   // --- Camera shake: decaying offset, never touches the base pose ---
+  // Suppressed entirely under prefers-reduced-motion (spatial movement).
+  const reducedMotion =
+    typeof matchMedia === "function" &&
+    matchMedia("(prefers-reduced-motion: reduce)").matches;
   let shakeAmp = 0;
   let shakeT = 0;
   const shakeOffset = new THREE.Vector3();
@@ -188,6 +192,7 @@ export function createEffects(scene, camera) {
       burstUniforms.uStart.value = burstUniforms.uTime.value;
     },
     shake(strength) {
+      if (reducedMotion) return;
       shakeAmp = Math.max(shakeAmp, strength * 0.08);
       shakeT = 0;
     },

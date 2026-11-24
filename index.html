@@ -2,29 +2,89 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" href="./icons/icon-48.png" />
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
     />
+    <meta name="color-scheme" content="dark" />
     <title>Slip Catch – Cricket Catching Game</title>
     <meta
       name="description"
       content="Practice cricket slip catches in a floodlit 3D stadium. Track the swing, cup your hands, keep the streak alive."
     />
+    <link rel="canonical" href="https://catchtheswing.netlify.app/" />
     <meta name="theme-color" content="#0a1628" />
+
+    <!-- Install / standalone -->
+    <link rel="manifest" href="./site.webmanifest" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta
+      name="apple-mobile-web-app-status-bar-style"
+      content="black-translucent"
+    />
+    <meta name="apple-mobile-web-app-title" content="Slip Catch" />
+    <link rel="icon" type="image/png" href="./icons/icon-48.png" />
+    <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+
+    <!-- Social share previews -->
     <meta property="og:title" content="Slip Catch – Cricket Catching Game" />
     <meta
       property="og:description"
       content="Practice cricket slip catches in a floodlit 3D stadium. Track the swing, cup your hands, keep the streak alive."
     />
     <meta property="og:type" content="website" />
-    <meta name="twitter:card" content="summary" />
+    <meta property="og:url" content="https://catchtheswing.netlify.app/" />
+    <meta property="og:site_name" content="Slip Catch" />
+    <meta
+      property="og:image"
+      content="https://catchtheswing.netlify.app/og-image.jpg"
+    />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="Slip Catch: a floodlit cricket stadium at night"
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Slip Catch – Cricket Catching Game" />
+    <meta
+      name="twitter:description"
+      content="Practice cricket slip catches in a floodlit 3D stadium. Track the swing, cup your hands, keep the streak alive."
+    />
+    <meta
+      name="twitter:image"
+      content="https://catchtheswing.netlify.app/og-image.jpg"
+    />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "VideoGame",
+        "name": "Slip Catch",
+        "url": "https://catchtheswing.netlify.app/",
+        "description": "Practice cricket slip catches in a floodlit 3D stadium. Track the swing, cup your hands, keep the streak alive.",
+        "image": "https://catchtheswing.netlify.app/og-image.jpg",
+        "genre": "Sports",
+        "gamePlatform": "Web browser",
+        "applicationCategory": "Game",
+        "operatingSystem": "Any",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+      }
+    </script>
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
-    <canvas id="bg"></canvas>
+    <canvas id="bg" aria-hidden="true"></canvas>
     <div id="ui"></div>
-    <script type="module" src="/main.js"></script>
+    <noscript>
+      <p
+        style="position:fixed;inset:0;display:grid;place-items:center;margin:0;padding:2rem;font-family:system-ui,sans-serif;color:#fff;background:#0a1628;text-align:center"
+      >
+        Slip Catch is a 3D cricket catching game — it needs JavaScript and
+        WebGL to run. Enable JavaScript and reload to play.
+      </p>
+    </noscript>
+    <script type="module" src="./main.js"></script>
   </body>
 </html>

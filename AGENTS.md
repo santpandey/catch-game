@@ -6,7 +6,11 @@
 - `npm run build` — production build to `dist/`
 - `npx vite preview --port 4173` — serve the production build
 - `npm run convert-images` — repaint + convert `assets/stadium.png` → `assets/stadium.webp` (sharp; crop + fascia paint-out)
-- `npm run capture-store` — BiDi (Firefox headless) store-asset capture → `store-assets/` (needs `npx vite preview --port 4173` + headless Firefox `--remote-debugging-port 9230`; env `BIDI_URL`, `BASE_URL`)
+- `npm run generate-icons` — rasterize the ball SVG → all `public/icons/` tiles (extension, PWA 192/512, maskable, apple-touch)
+- `npm run generate-og` — regenerate `public/og-image.jpg` (1200×630 share card) from `assets/stadium.webp`
+- `npm run generate-itch` — generate itch.io cover → `store-assets/itch-cover-630x500.png`
+- `npm run package-itch` — build + zip `dist/` contents → `slip-catch.zip` (itch.io HTML5 upload; index.html at zip root)
+- `npm run capture-store` — Playwright WebKit (headless) screenshot capture → `store-assets/` (needs `npx vite preview --port 4173`; env `BASE_URL`; engine in `~/Library/Caches/ms-playwright`, not a system browser install)
 - `node cdp-profile.js <url>?debug 15` — FPS/long-task/heap profile via CDP (Chromium-only; do not use, see browser notes)
 
 Deploy: Netlify builds with `npm run build` and publishes `dist/` (see `netlify.toml`).
