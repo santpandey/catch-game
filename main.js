@@ -378,6 +378,14 @@ function init() {
     bumpMap: seamTexture,
     bumpScale: 0.6,
     roughness: 0.75,
+    // The ball leather carries an emissive self-glow so it reads at night;
+    // without matching treatment the unlit seam went dark against it high
+    // in the flight. Reusing the same texture as emissiveMap keeps the
+    // threads legible at distance — the cost is one extra texture sample
+    // on a 240-triangle mesh, effectively free.
+    emissiveMap: seamTexture,
+    emissive: 0xffffff,
+    emissiveIntensity: 0.32,
   });
   const seam = new THREE.Mesh(seamGeometry, seamMaterial);
   // Torus default lies in XY (normal Z). Rotate so the ring lies in the YZ
