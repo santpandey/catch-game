@@ -13,6 +13,7 @@ import { createAudio } from "./src/audio.js";
 import {
   planDelivery,
   catchZone,
+  paceForCatches,
   HANDS_Z,
   BALL_MASS,
 } from "./src/delivery.js";
@@ -55,6 +56,7 @@ let multiplier = 1;
 let lives = 3;
 let catches = 0;
 let difficulty = 0;
+let paceLevel = 0;
 let best = 0;
 let hadNewBest = false;
 try {
@@ -83,6 +85,19 @@ const FLY_DURATION = 1.8;
 // Attract-mode autopilot: hands chase the predicted crossing with lag
 const autoTarget = new THREE.Vector3();
 
+// Upright-seam orientation: the ball's visual rotation is procedural, not
+// from the physics body. The seam ring plane stays vertical (perpendicular
+// to the ground) — yawed to the release direction with a slight tilt
+// towards the swing side, like a seam bowler's grip — while backspin
+// rotates within the seam plane so the ring reads as gyroscopically stable.
+const seamBaseQuat = new THREE.Quaternion();
+const seamSpinQuat = new THREE.Quaternion();
+const seamBaseEuler = new THREE.Euler();
+const SEAM_SPIN_RATE = -30; // rad/s backspin around the seam normal
+const SEAM_SWING_TILT = 0.35; // rad yaw tilt towards the swing direction
+const X_AXIS = new THREE.Vector3(1, 0, 0);
+let seamSpinAngle = 0;
+
 // --- Ball Leather Texture ---
 function createBallTexture() {
   const canvas = document.createElement("canvas");
@@ -99,6 +114,60 @@ function createBallTexture() {
   }
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+// --- Seam Stitch Texture ---
+// A real ball's seam is raised twine cross-stitched along the cord: rows of
+// diagonal stitches leaning alternately, giving the herringbone/net look.
+// Painted once on a canvas; used as both the colour map and the bump map.
+function createSeamTexture() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1024;
+  canvas.height = 128;
+  const ctx = canvas.getContext("2d");
+  // Ivory twine base with a soft vertical falloff so the cord reads rounded
+  ctx.fillStyle = "#efe7d4";
+  ctx.fillRect(0, 0, 1024, 128);
+  const grad = ctx.createLinearGradient(0, 0, 0, 128);
+  grad.addColorStop(0, "rgba(120,100,70,0.55)");
+  grad.addColorStop(0.25, "rgba(255,252,240,0.25)");
+  grad.addColorStop(0.5, "rgba(255,255,250,0.4)");
+  grad.addColorStop(0.75, "rgba(255,252,240,0.25)");
+  grad.addColorStop(1, "rgba(120,100,70,0.55)");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 1024, 128);
+
+  // Cross-stitch lattice: each unit is an X of two strands, chained into a
+  // continuous zigzag net — the raised cross-hatch of a real seam. Shadow
+  // pass under a lit pass makes the thread read as sitting on the cord.
+  const units = 46; // stitch Xs around the ring (texture wraps once)
+  const uw = 1024 / units;
+  ctx.lineCap = "round";
+  for (let i = 0; i <= units; i++) {
+    const x0 = i * uw;
+    for (const [dir, lit] of [
+      [1, "rgba(244,236,216,0.95)"],
+      [-1, "rgba(255,253,242,0.98)"],
+    ]) {
+      ctx.strokeStyle = "rgba(96,74,46,0.9)";
+      ctx.lineWidth = 7;
+      ctx.beginPath();
+      ctx.moveTo(x0 - dir * uw * 0.5 + 1.2, 17.2);
+      ctx.lineTo(x0 + dir * uw * 0.5 + 1.2, 113.2);
+      ctx.stroke();
+      ctx.strokeStyle = lit;
+      ctx.lineWidth = 4.5;
+      ctx.beginPath();
+      ctx.moveTo(x0 - dir * uw * 0.5, 16);
+      ctx.lineTo(x0 + dir * uw * 0.5, 112);
+      ctx.stroke();
+    }
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.anisotropy = 4;
   return texture;
 }
 
@@ -221,11 +290,19 @@ function init() {
   ball.add(ballSphere);
 
   const seamGeometry = new THREE.TorusGeometry(0.1, 0.012, 12, 60);
+  const seamTexture = createSeamTexture();
   const seamMaterial = new THREE.MeshStandardMaterial({
-    color: 0xf5f0e6,
-    roughness: 0.6,
+    map: seamTexture,
+    bumpMap: seamTexture,
+    bumpScale: 0.6,
+    roughness: 0.75,
   });
   const seam = new THREE.Mesh(seamGeometry, seamMaterial);
+  // Torus default lies in XY (normal Z). Rotate so the ring lies in the YZ
+  // plane — the vertical plane containing the flight direction — making the
+  // seam normal the horizontal X axis. Spinning the ball around X then
+  // rotates the seam within its own plane: it never wobbles visually.
+  seam.rotation.y = Math.PI / 2;
   ball.add(seam);
   scene.add(ball);
 
@@ -321,7 +398,14 @@ function init() {
         return delivery;
       },
       get state() {
-        return { screen, phase, score, lives, streak };
+        return { screen, phase, score, lives, streak, catches, difficulty, paceLevel };
+      },
+      // Test hook: jump to a catch count (recomputes difficulty + pace)
+      setCatches(n) {
+        catches = Math.max(0, Math.floor(n));
+        difficulty = Math.min(1, catches / 30);
+        paceLevel = paceForCatches(catches);
+        ui.setPace(paceLevel);
       },
       scene,
       camera,
@@ -478,6 +562,7 @@ function onRestart() {
   lives = 3;
   catches = 0;
   difficulty = 0;
+  paceLevel = 0;
   hadNewBest = false;
   userPaused = false;
   paused = hiddenPaused;
@@ -488,6 +573,7 @@ function onRestart() {
   ui.setStreak(0, 1);
   ui.setLives(lives, 3);
   ui.setBest(best);
+  ui.setPace(0);
   ui.showHud();
   effects.reset();
   screen = "play";
@@ -523,7 +609,7 @@ function deliveryZone() {
 }
 
 function releaseBall() {
-  delivery = planDelivery({ difficulty, window: deliveryZone() });
+  delivery = planDelivery({ difficulty, pace: paceLevel, window: deliveryZone() });
   isBallCaught = false;
 
   ballBody.position.set(
@@ -536,10 +622,27 @@ function releaseBall() {
     delivery.velocity.y,
     delivery.velocity.z,
   );
-  ballBody.angularVelocity.set(-6, (Math.random() - 0.5) * 4, 0);
+  // Physics tumble is irrelevant to gameplay — the seam is driven
+  // procedurally, so keep the body's spin at zero.
+  ballBody.angularVelocity.set(0, 0, 0);
   ballBody.wakeUp();
   ball.visible = true;
   ball.position.copy(ballBody.position);
+
+  // Seam upright, yawed to the horizontal release direction; swinging
+  // deliveries tilt the seam a touch towards the swing side (outswinger /
+  // inswinger seam position). Fixed for the whole flight — the gyroscopic
+  // stability of the seam is exactly what the visual is modelling.
+  const v = delivery.velocity;
+  const releaseYaw = Math.atan2(v.x, v.z);
+  const tilt =
+    delivery.swingType === "none"
+      ? 0
+      : Math.sign(delivery.swingForceX || 1) * SEAM_SWING_TILT;
+  seamBaseEuler.set(0, releaseYaw + tilt, 0);
+  seamBaseQuat.setFromEuler(seamBaseEuler);
+  seamSpinAngle = 0;
+  ball.quaternion.copy(seamBaseQuat);
 
   // Release flash
   releaseFlash.material.opacity = 0.9;
@@ -574,8 +677,13 @@ function onCatch() {
     multiplier = Math.min(1 + Math.floor(streak / 3), 5);
     score += multiplier;
     difficulty = Math.min(1, catches / 30);
-    const isScreamer =
-      Math.abs(delivery.swingDisp) > 0.6 || delivery.flightTime < 1.0;
+    const newPace = paceForCatches(catches);
+    const paceUp = newPace > paceLevel;
+    if (paceUp) {
+      paceLevel = newPace;
+      ui.setPace(paceLevel);
+    }
+    const isScreamer = Math.abs(delivery.swingDisp) > 0.95;
     ui.setScore(score);
     ui.setStreak(streak, multiplier);
     if (score > best) {
@@ -587,12 +695,15 @@ function onCatch() {
       } catch (e) {}
     }
     stadium.setBest(best);
-    ui.popMessage(isScreamer ? "SCREAMER!" : "CAUGHT!", "good");
+    // Milestone catches announce the speed-up instead of a plain CAUGHT —
+    // the score/streak/burst still confirm the catch visually.
+    const msg = paceUp ? "PACE UP!" : isScreamer ? "SCREAMER!" : "CAUGHT!";
+    ui.popMessage(msg, paceUp ? "info" : "good");
     audio.playCatch();
     audio.playCheer(Math.min(1, 0.4 + streak * 0.1));
     stadium.triggerWave();
     stadium.triggerFlashBurst();
-    stadium.setBoardMessage(isScreamer ? "SCREAMER!" : "CAUGHT!", 1500);
+    stadium.setBoardMessage(msg, 1500);
   }
   setPhase("result");
 }
@@ -710,7 +821,12 @@ function animate() {
 
       if (!isBallCaught) {
         ball.position.copy(ballBody.position);
-        ball.quaternion.copy(ballBody.quaternion);
+        // Backspin around the seam normal — the ring rotates within its own
+        // vertical plane, so the seam reads upright the whole way down.
+        seamSpinAngle += SEAM_SPIN_RATE * deltaTime;
+        ball.quaternion
+          .copy(seamBaseQuat)
+          .multiply(seamSpinQuat.setFromAxisAngle(X_AXIS, seamSpinAngle));
       } else if (hands) {
         // Keep ball attached to hands when caught
         hands.ballAnchor(ball.position);
@@ -814,4 +930,11 @@ if (fpsMonitor.enabled) {
 // --- Start Application ---
 init();
 
-// Vite HMR is now handled by the framework's default, faster mechanism.
+// Service worker: offline play + instant repeat loads. Production only —
+// in dev the SW would cache stale modules. Registered relative to the page
+// so it also works under subpaths (itch.io, portal iframes).
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js").catch(() => {});
+  });
+}

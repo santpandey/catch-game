@@ -8,12 +8,26 @@ export const HANDS_Z = 4.2;
 export const PHYSICS_DT = 1 / 60;
 export const BALL_MASS = 0.156;
 export const GRAVITY = -9.82;
-export const MAX_SWING_FORCE = 2.5;
+export const MAX_SWING_FORCE = 4;
 const THROWER_Z = -6;
 const START_Y = 1.5;
 const REVERSE_FLIP_Z = 1.5;
 
 const lerp = (a, b, t) => a + (b - a) * t;
+
+// Pace ramp: discrete milestones make speed-ups a felt "level up" event
+// instead of an invisible drift. Pace scales ball speed multiplicatively
+// on the base (+15%, +30%, +45%, +55%), so T = BASE_T / PACE_MULT[level].
+export const PACE_MILESTONES = [6, 12, 18, 24];
+export const PACE_MULT = [1, 1.15, 1.3, 1.45, 1.55];
+const BASE_T = 1.4;
+
+// Pace level for a catch count (0-4)
+export function paceForCatches(catches) {
+  let l = 0;
+  for (const m of PACE_MILESTONES) if (catches >= m) l++;
+  return l;
+}
 
 // Simulates the flight; returns {x, y} at the first step where
 // z >= HANDS_Z
@@ -63,35 +77,45 @@ export function catchZone(win, difficulty = 0) {
   };
 }
 
-export function planDelivery({ difficulty = 0, window, rng = Math.random }) {
+export function planDelivery({ difficulty = 0, pace = 0, window, rng = Math.random }) {
   const d = Math.min(1, Math.max(0, difficulty));
 
   // Crossing point (where the ball reaches z = HANDS_Z) inside the window
   const cx = lerp(window.xMin, window.xMax, rng());
   const cy = lerp(window.yMin, window.yMax, rng());
 
-  // Flight time: 1.37 s at difficulty 0 down to ~0.85 s at 1
-  let T = lerp(1.37, 0.85, d);
+  // Flight time set by pace level: 1.4 s base down to ~0.9 s at max pace
+  let T = BASE_T / PACE_MULT[Math.min(pace, PACE_MULT.length - 1)];
 
-  // Swing mix: 20% none / 50% normal / 30% reverse
+  // Swing mix: 15% none / 50% normal / 35% reverse
   const roll = rng();
-  const swingType = roll < 0.2 ? "none" : roll < 0.7 ? "normal" : "reverse";
+  const swingType = roll < 0.15 ? "none" : roll < 0.65 ? "normal" : "reverse";
   if (swingType === "reverse") T /= 0.9;
 
-  // Swing start: 35-55% down the leg normally (a long, readable curve).
-  // For reverse, start well before the flip (z = 1.5) so pre/post-flip
-  // legs don't cancel and the solver doesn't need absurd forces.
+  // Swing start: 40-70% down the leg normally — late enough to read as a
+  // jag, not a long lazy curve. For reverse, start well before the flip
+  // (z = 1.5) so pre/post-flip legs don't cancel and the solver doesn't
+  // need absurd forces.
   const swingStartZ =
     swingType === "reverse"
       ? lerp(-2.5, -1.5, rng())
-      : THROWER_Z + (5 - THROWER_Z) * lerp(0.35, 0.55, rng());
+      : THROWER_Z + (5 - THROWER_Z) * lerp(0.4, 0.7, rng());
   const flipZ = swingType === "reverse" ? REVERSE_FLIP_Z : null;
 
-  // Visible lateral displacement: [0.25,0.6] m at d=0 to [0.4,0.9] at d=1
-  const dMin = lerp(0.25, 0.4, d);
-  const dMax = lerp(0.6, 0.9, d);
+  // Visible lateral displacement: [0.4,0.9] m at d=0 to [0.55,1.4] at d=1 —
+  // back towards the wilder early-game feel. Capped by what the swing
+  // window can physically deliver: disp = a t² / 2 where a = F/m, so a
+  // late start on a fast ball can't move the ball far and must not draw a
+  // target the solver would need to clamp (clamping flattens the arc).
+  const vzApprox = (HANDS_Z - THROWER_Z) / T;
+  const tSwing = (HANDS_Z - swingStartZ) / vzApprox;
+  const dispCap = (MAX_SWING_FORCE * tSwing * tSwing) / (2 * BALL_MASS) * 0.9;
+  const dMin = Math.min(lerp(0.4, 0.55, d), dispCap);
+  const dMax = Math.min(lerp(0.9, 1.4, d), dispCap);
   let swingDisp =
-    swingType === "none" ? 0 : lerp(dMin, dMax, rng()) * (rng() < 0.5 ? -1 : 1);
+    swingType === "none"
+      ? 0
+      : lerp(dMin, dMax, rng()) * (rng() < 0.5 ? -1 : 1);
 
   // Aim point = where the ball crosses without swing; keep it sane
   let aim = cx - swingDisp;
@@ -151,6 +175,7 @@ export function planDelivery({ difficulty = 0, window, rng = Math.random }) {
     reverseFlipZ: REVERSE_FLIP_Z,
     crossing: { x: cx, y: cy },
     flightTime: T,
+    pace,
     swingDisp,
   };
 }

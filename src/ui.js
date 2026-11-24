@@ -147,12 +147,17 @@ export function createUI({ onStart, onRestart, onToggleMute, onTogglePause } = {
   const livesRow = el("span", "sc-lives");
   livesBox.appendChild(livesRow);
 
+  const paceBox = el("div", "sc-hud__group sc-hud__pace");
+  paceBox.appendChild(el("span", "sc-label", "Pace"));
+  const paceRow = el("span", "sc-pace");
+  paceBox.appendChild(paceRow);
+
   const bestBox = el("div", "sc-hud__group sc-hud__best");
   bestBox.appendChild(el("span", "sc-label", "Best"));
   const bestVal = el("span", "sc-hud__val", "0");
   bestBox.appendChild(bestVal);
 
-  hud.append(scoreBox, streakBox, livesBox, bestBox);
+  hud.append(scoreBox, streakBox, livesBox, paceBox, bestBox);
 
   // ---------- Pop messages ----------
   const pops = el("div", "sc-pops");
@@ -184,7 +189,12 @@ export function createUI({ onStart, onRestart, onToggleMute, onTogglePause } = {
   againBtn.type = "button";
   const shareBtn = el("button", "sc-btn sc-btn--ghost", "Share");
   shareBtn.type = "button";
-  actions.append(againBtn, shareBtn);
+  // An <a> (navigation), not a <button> — opens the feedback page
+  const feedbackLink = el("a", "sc-btn sc-btn--ghost", "Feedback");
+  feedbackLink.href = "https://github.com/santpandey/catch-game/issues";
+  feedbackLink.target = "_blank";
+  feedbackLink.rel = "noopener";
+  actions.append(againBtn, shareBtn, feedbackLink);
   card.append(overHeading, stats, actions);
   over.appendChild(card);
 
@@ -406,6 +416,18 @@ export function createUI({ onStart, onRestart, onToggleMute, onTogglePause } = {
     livesBox.setAttribute("aria-label", `${left} of ${total} lives`);
   }
 
+  let lastPace = 0;
+  function setPace(level) {
+    const n = Math.max(0, Math.min(4, Math.floor(Number(level) || 0)));
+    while (paceRow.children.length < 4) paceRow.appendChild(el("span", "sc-pace__pip"));
+    Array.from(paceRow.children).forEach((pip, i) => {
+      pip.classList.toggle("is-on", i < n);
+    });
+    if (n !== lastPace) restartAnim(paceRow, "is-bump");
+    lastPace = n;
+    paceBox.setAttribute("aria-label", `pace level ${n} of 4`);
+  }
+
   function popMessage(text, kind = "info") {
     const k = kind === "good" || kind === "bad" ? kind : "info";
     pops.textContent = "";
@@ -448,6 +470,7 @@ export function createUI({ onStart, onRestart, onToggleMute, onTogglePause } = {
   setStreak(0, 1);
   setScore(0);
   setBest(0);
+  setPace(0);
 
   return {
     showTitle,
@@ -458,6 +481,7 @@ export function createUI({ onStart, onRestart, onToggleMute, onTogglePause } = {
     setStreak,
     setLives,
     setBest,
+    setPace,
     popMessage,
     showGameOver,
     hideGameOver,
