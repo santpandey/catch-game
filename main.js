@@ -372,6 +372,28 @@ function init() {
   ball.add(ballSphere);
 
   const seamGeometry = new THREE.TorusGeometry(0.1, 0.012, 12, 60);
+  // A round tube makes the seam far taller than a real one (12% of the
+  // ball radius vs ~4% on leather). Squash the cross-section's radial
+  // component — the height, in the ring plane — while leaving the width
+  // alone, so the seam reads as the low wide ridge of the real thing.
+  // One-time vertex edit at startup; UVs untouched, no runtime cost.
+  {
+    const squash = 0.42;
+    const posAttr = seamGeometry.attributes.position;
+    for (let i = 0; i < posAttr.count; i++) {
+      const x = posAttr.getX(i);
+      const y = posAttr.getY(i);
+      const theta = Math.atan2(y, x);
+      const ux = Math.cos(theta);
+      const uy = Math.sin(theta);
+      const radial = x * ux + y * uy;
+      const squashed = 0.1 + (radial - 0.1) * squash;
+      posAttr.setX(i, squashed * ux);
+      posAttr.setY(i, squashed * uy);
+    }
+    posAttr.needsUpdate = true;
+    seamGeometry.computeVertexNormals();
+  }
   const seamTexture = createSeamTexture();
   const seamMaterial = new THREE.MeshStandardMaterial({
     map: seamTexture,
