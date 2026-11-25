@@ -13,7 +13,7 @@
 - `npm run capture-store` — Playwright WebKit (headless) screenshot capture → `store-assets/` (needs `npx vite preview --port 4173`; env `BASE_URL`; engine in `~/Library/Caches/ms-playwright`, not a system browser install)
 - `node cdp-profile.js <url>?debug 15` — FPS/long-task/heap profile via CDP (Chromium-only; do not use, see browser notes)
 
-Deploy: Cloudflare Pages — `npx wrangler pages deploy dist --project-name=slip-catch` (OAuth login done on this machine; if expired, `npx wrangler login`). Live at https://slip-catch.pages.dev. CI: GitHub Actions (.github/workflows/deploy-pages.yml) auto-deploys on push to master. Headers in public/_headers. Legacy: a Workers static-assets deploy (slip-catch.santoshhuf3.workers.dev) and the flaky Workers Builds git integration still exist in the Cloudflare account — ignore both. Netlify retired (bandwidth-capped).
+Deploy: Cloudflare Pages — `npx wrangler pages deploy dist --project-name=slip-catch` (OAuth login done on this machine; if expired, `npx wrangler login`). Live at https://slip-catch.pages.dev. CI: GitHub Actions (.github/workflows/deploy-pages.yml) auto-deploys on push to master. Headers in public/_headers. Legacy: the Workers static-assets deploy and its flaky git-integration CI were deleted Nov 2026 — Pages is the only deployment. Netlify retired (bandwidth-capped).
 
 ## Browser notes
 
