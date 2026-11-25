@@ -8,15 +8,21 @@ import * as THREE from "three";
 // construction), and at the contact frame the ball is re-launched with
 // real physics planned from the bat position (see main.js + delivery.js).
 
-// Thrower release point — right edge of frame, mid-distance, chest height.
-export const THROWER_POS = new THREE.Vector3(3.7, 1.65, -4.0);
-// Bat-ball contact point — kneeling height, offset right of centre.
-export const BAT_CONTACT = new THREE.Vector3(1.85, 0.62, -0.7);
-// Leg A duration (s): fixed so the theatre is deterministic. Flat throw.
-export const LEG_A_TIME = 0.85;
+// Thrower release point — middle of the pitch, just beyond its far end
+// (the pitch runs z +5 to -25, centered x=0): the bowler's line. The throw
+// angles slightly inward off the pitch line as it travels to the bat —
+// the "little inclined" throw of the drill.
+export const THROWER_POS = new THREE.Vector3(0, 1.6, -26.5);
+// Bat-ball contact point — kneeling at the pitch's left border (edge x=-1.1),
+// depth unchanged so the validated leg-B feel is preserved.
+export const BAT_CONTACT = new THREE.Vector3(-1.1, 0.62, -0.7);
+// Leg A duration (s): fixed so the theatre is deterministic — derived from
+// the throw distance at a firm flat-throw pace (~22 m/s), so it reads as a
+// real delivery down the pitch rather than a laser or a lob.
+export const LEG_A_TIME = THROWER_POS.distanceTo(BAT_CONTACT) / 22;
 // Slight downward arc sag on leg A so the throw reads as a arm ball,
 // not a laser — peak drop (m) at mid-flight, parabolic in/out.
-const LEG_A_SAG = 0.12;
+const LEG_A_SAG = 0.55;
 
 const _a = new THREE.Vector3();
 
@@ -73,7 +79,7 @@ export function createBat(scene) {
   // ramp the incoming throw can "hit", and yawed open toward the
   // camera/hands side — the edge naturally flies toward the cordon.
   group.rotation.order = "YXZ";
-  group.rotation.y = -0.55; // open the face toward the camera side
+  group.rotation.y = 0.55; // open the face toward the camera side
   group.rotation.x = -0.95; // lean the blade back into ramp position
 
   // Anchor the blade's contact-centre at BAT_CONTACT: the group origin is
