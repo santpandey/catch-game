@@ -659,6 +659,14 @@ function startPlay(skipFly) {
     flyFrom.pos.copy(camera.position);
     flyFrom.quat.copy(camera.quaternion);
     flyT = 0;
+    // Kill any attract-mode delivery the moment the player commits. It was
+    // never their ball — left flying it either freezes mid-air (the phase
+    // machine is paused during flyin) or vanishes right as play begins,
+    // reading as "the first ball disappears". The first ball the player
+    // sees must be their first real delivery.
+    ball.visible = false;
+    ballBody.sleep();
+    isBallCaught = false;
     screen = "flyin";
   }
 }
@@ -920,7 +928,10 @@ function animate() {
     }
 
     // --- Phase machine ---
-    if (phase === "ready") {
+    // Frozen during the fly-in: a ready timer expiring mid-flight would
+    // release a phantom ball into the camera transition.
+    if (screen !== "flyin") {
+      if (phase === "ready") {
       ball.visible = false;
       ballBody.sleep();
       ballBody.position.set(0, 1.5, -6);
@@ -969,6 +980,7 @@ function animate() {
         setPhase("ready");
         ball.visible = false;
       }
+    }
     }
 
     // Release flash decay
