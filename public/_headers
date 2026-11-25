@@ -1,0 +1,40 @@
+# Cloudflare Pages headers — mirrors netlify.toml.
+# NOTE: deliberately NO X-Frame-Options and no frame-ancestors directive —
+# game portals (CrazyGames, itch.io, Poki, ...) embed the game inside their
+# own iframe, so it must stay frameable. This is a static game with no
+# sensitive state, so clickjacking is not a real threat here.
+
+# --- Security headers (all routes) ---
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), accelerometer=(), gyroscope=(), usb=(), focus-without-user-activation=()
+  Cross-Origin-Opener-Policy: same-origin-allow-popups
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' blob:; media-src 'self' blob:; worker-src 'self' blob:; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-src 'none'
+
+# --- Cache headers ---
+# Vite's build output under /assets/ is content-hashed — cache forever.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# HTML always revalidates so deploys show up immediately.
+/index.html
+  Cache-Control: public, max-age=0, must-revalidate
+
+# The service worker must never be served stale: browsers re-check it on
+# every page load, and a cached copy would delay game updates.
+/sw.js
+  Cache-Control: public, max-age=0, must-revalidate
+
+# Manifest + unversioned public/ assets: short cache so updates propagate.
+/*.webmanifest
+  Cache-Control: public, max-age=3600
+
+/manifest.json
+  Cache-Control: public, max-age=3600
+
+/icons/*
+  Cache-Control: public, max-age=86400
+
+/og-image.jpg
+  Cache-Control: public, max-age=86400

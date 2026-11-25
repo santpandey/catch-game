@@ -1,0 +1,3 @@
+# SPA fallback — mirrors the netlify.toml redirect. Static assets still
+# take precedence (Pages serves existing files before applying redirects).
+/* /index.html 200
