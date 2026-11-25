@@ -24,10 +24,10 @@ const PALM_NORMAL = new THREE.Vector3(
 // Curl angles (deg) at [open, caught] per joint-name tail
 const CURL_DEG = {
   metacarpal: [0, 18],
-  "phalanx-proximal": [10, 55],
-  "phalanx-intermediate": [10, 60],
-  "phalanx-distal": [0, 30],
-  tip: [0, 12],
+  "phalanx-proximal": [10, 70],
+  "phalanx-intermediate": [10, 85],
+  "phalanx-distal": [0, 50],
+  tip: [0, 25],
 };
 const THUMB_DEG = {
   metacarpal: [0, 15],
@@ -83,7 +83,7 @@ function skinMaterial(m) {
 
 // Re-parent the flat joints into chains, add open/caught poses per bone,
 // and return the pose/axis info needed to place the hand.
-function rigHand(gltfScene, bones, side) {
+function rigHand(gltfScene, bones, side, scanJoints) {
   const armature = gltfScene.getObjectByName("Armature");
   gltfScene.updateMatrixWorld(true);
 
@@ -135,9 +135,16 @@ function rigHand(gltfScene, bones, side) {
 
   for (const [fname, chain] of Object.entries(CHAINS)) {
     const table = chain[0].startsWith("thumb") ? THUMB_DEG : CURL_DEG;
+    const key = side + ":" + fname;
+    scanJoints[key] = [];
     for (const name of chain) {
       const bone = gltfScene.getObjectByName(name);
       if (!bone) continue;
+      // Only the moving, visible segments drive contact. Metacarpals and
+      // proximal phalanges sit statically deep in the cup where the ball
+      // nests — including them freezes the finger before its tip can close.
+      if (!/-(tip|distal|intermediate)$/.test(name) && !name.endsWith("thumb-tip")) continue;
+      scanJoints[key].push(bone);
       const [openDeg, catchDeg] = table[jointTail(name)] || [0, 0];
       if (openDeg === 0 && catchDeg === 0) continue;
       const open = bone.quaternion.clone();
@@ -145,7 +152,7 @@ function rigHand(gltfScene, bones, side) {
       const openQ = open.clone().multiply(_rx);
       _rx.setFromAxisAngle(_axisX, (catchDeg * sign * Math.PI) / 180);
       const caught = open.clone().multiply(_rx);
-      bones.push({ bone, open: openQ, caught, finger: side + ":" + fname });
+      bones.push({ bone, open: openQ, caught, finger: key });
     }
   }
 
@@ -159,6 +166,7 @@ export function createHands({ left, right }) {
   group.add(model);
 
   const bones = [];
+  const scanJoints = {};
   const wrists = [];
   let gateDiff = 0;
 
@@ -166,7 +174,7 @@ export function createHands({ left, right }) {
     ["right", right],
     ["left", left],
   ]) {
-    const rig = rigHand(gltfScene, bones, side);
+    const rig = rigHand(gltfScene, bones, side, scanJoints);
     gateDiff = Math.max(gateDiff, rig.maxDiff);
     wrists.push(rig.wrist);
 
@@ -226,48 +234,66 @@ export function createHands({ left, right }) {
   const basePos = new THREE.Vector3();
 
   // Per-finger contact limits: at the catch instant we scan curl values with
-  // forward kinematics and cap each finger where its tip would meet the ball,
-  // so fingers close onto the surface instead of passing through it.
-  const tipBones = {};
-  for (const b of bones) {
-    if (b.bone.name.endsWith("-tip") && !tipBones[b.finger]) {
-      tipBones[b.finger] = b.bone;
-    }
-  }
+  // forward kinematics and cap each finger where any of its joints would meet
+  // the ball, so fingers close onto the surface instead of passing through
+  // it. The clearance equals the finger mesh thickness so the skin rests
+  // exactly on the ball — no visible gap, no clipping.
   const curlLimits = {};
-  for (const key of Object.keys(tipBones)) curlLimits[key] = 1;
+  for (const key of Object.keys(scanJoints)) curlLimits[key] = 1;
 
+  const CONTACT_CLEARANCE = 0.118; // ball radius + finger skin thickness
+  const ANCHOR_PALM = 0.105; // ball centre offset along the palm normal
+  const SCAN_STEP = 0.025;
+  // The ball anchors rigidly in the cup, so the contact geometry is identical
+  // for every catch — scanning once is enough. The first scan almost always
+  // happens during attract mode, before real gameplay begins.
+  let limitsComputed = false;
   function computeContactLimits() {
+    if (limitsComputed) return;
+    limitsComputed = true;
     // Where the ball will sit once settled in the cup (give motion decayed)
     _v.set(
-      group.position.x + PALM_NORMAL.x * 0.145,
-      group.position.y + PALM_NORMAL.y * 0.145 + 0.05,
-      group.position.z + PALM_NORMAL.z * 0.145 + 0.025,
+      group.position.x + PALM_NORMAL.x * ANCHOR_PALM,
+      group.position.y + PALM_NORMAL.y * ANCHOR_PALM + 0.05,
+      group.position.z + PALM_NORMAL.z * ANCHOR_PALM + 0.025,
     );
     const firstContact = {};
-    // A finger's tip depends only on its own chain, so posing every chain at
-    // the same curl value yields correct per-finger positions in one pass.
-    for (let c = 0.15; c <= 1.001; c += 0.05) {
+    const resting = {};
+    // A finger's joints depend only on its own chain, so posing every chain
+    // at the same curl value yields correct per-finger positions in one pass.
+    for (let c = 0.1; c <= 1.001; c += SCAN_STEP) {
       for (const b of bones) {
         b.bone.quaternion.slerpQuaternions(b.open, b.caught, c);
       }
       model.updateMatrixWorld(true);
-      for (const [key, tip] of Object.entries(tipBones)) {
+      for (const [key, joints] of Object.entries(scanJoints)) {
         if (firstContact[key] !== undefined) continue;
-        const e = tip.matrixWorld.elements;
-        const dx = e[12] - _v.x;
-        const dy = e[13] - _v.y;
-        const dz = e[14] - _v.z;
-        if (Math.sqrt(dx * dx + dy * dy + dz * dz) < 0.105) {
-          firstContact[key] = c;
+        for (let ji = 0; ji < joints.length; ji++) {
+          if (resting[key + ji]) continue;
+          const e = joints[ji].matrixWorld.elements;
+          const dx = e[12] - _v.x;
+          const dy = e[13] - _v.y;
+          const dz = e[14] - _v.z;
+          if (Math.sqrt(dx * dx + dy * dy + dz * dz) < CONTACT_CLEARANCE) {
+            if (c < 0.15) {
+              // Already touching when the hand is open: resting contact, not
+              // curl-induced — the finger should still close onto the ball.
+              resting[key + ji] = true;
+              continue;
+            }
+            firstContact[key] = c;
+            break;
+          }
         }
       }
     }
-    for (const key of Object.keys(tipBones)) {
-      // Back off two scan steps before first contact so the fingertip mesh
-      // (which extends past the tip joint) also clears the surface.
+    for (const key of Object.keys(scanJoints)) {
+      // Back off half a scan step: the skin presses lightly against the
+      // surface — visible contact with no air gap, no silhouette clipping.
       curlLimits[key] =
-        firstContact[key] === undefined ? 1 : Math.max(0.1, firstContact[key] - 0.1);
+        firstContact[key] === undefined
+          ? 1
+          : Math.max(0.1, firstContact[key] - SCAN_STEP / 2);
     }
   }
   const reducedMotion =
@@ -332,7 +358,6 @@ export function createHands({ left, right }) {
     catchT = -1;
     dropT = -1;
     give.y = give.z = give.rotX = 0;
-    for (const key of Object.keys(curlLimits)) curlLimits[key] = 1;
   }
 
   return {
@@ -347,15 +372,14 @@ export function createHands({ left, right }) {
     drop() {
       dropT = 0;
       catchT = -1;
-      for (const key of Object.keys(curlLimits)) curlLimits[key] = 1;
     },
     ballAnchor(target) {
       // Ball rests in the cup but high enough that ~1/4 of it shows above
       // the finger line: palm plane + a bit of forward and up
       return target.set(
-        group.position.x + PALM_NORMAL.x * 0.145,
-        group.position.y + PALM_NORMAL.y * 0.145 + give.y + 0.05,
-        group.position.z + PALM_NORMAL.z * 0.145 + give.z + 0.025,
+        group.position.x + PALM_NORMAL.x * ANCHOR_PALM,
+        group.position.y + PALM_NORMAL.y * ANCHOR_PALM + give.y + 0.05,
+        group.position.z + PALM_NORMAL.z * ANCHOR_PALM + give.z + 0.025,
       );
     },
   };
