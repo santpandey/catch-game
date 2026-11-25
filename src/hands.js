@@ -8,6 +8,9 @@ import * as THREE from "three";
 const HAND_SCALE = 2.0;
 // Palm centres sit this far apart around the group origin (model units)
 const HAND_SPREAD = 0.08;
+// Inward yaw per hand (deg) forming the cupped "W" catching bowl —
+// real slip technique: hands are not parallel, thumbs meet in the middle
+const CUP_YAW_DEG = 20;
 // Target pose: palms face the incoming ball (-Z) tilted ~25 deg up;
 // fingers point up, leaning ~25 deg toward the viewer (cupped look)
 const FINGER_DIR = new THREE.Vector3(
@@ -112,6 +115,10 @@ function rigHand(gltfScene, bones, side, scanJoints) {
   const F = pos(CHAINS.middle[4]).sub(pos(CHAINS.middle[0])).normalize();
   const IP = pos(CHAINS.pinky[0]).sub(pos(CHAINS.index[0])).normalize();
   const N = new THREE.Vector3().crossVectors(F, IP).normalize(); // palm side
+  // Chirality fix: left and right hands are mirror images, so F×IP yields the
+  // palm-side normal for one hand but the back-of-hand normal for the other.
+  // Without this the left hand's palm faced the viewer instead of the ball.
+  if (side === "left") N.negate();
 
   // Proper rotation mapping model axes to the target world pose:
   // align finger dir first, then swing the palm normal into place
@@ -182,6 +189,13 @@ export function createHands({ left, right }) {
 
     const pivot = new THREE.Group();
     pivot.quaternion.copy(rig.R);
+    const yawSign = side === "right" ? 1 : -1;
+    pivot.quaternion.premultiply(
+      new THREE.Quaternion().setFromAxisAngle(
+        new THREE.Vector3(0, 1, 0),
+        (yawSign * CUP_YAW_DEG * Math.PI) / 180,
+      ),
+    );
     pivot.add(gltfScene);
     model.add(pivot);
     model.updateMatrixWorld(true);
@@ -194,7 +208,7 @@ export function createHands({ left, right }) {
       .reduce((a, p) => a.add(p), new THREE.Vector3())
       .multiplyScalar(0.25);
     const inModel = model.worldToLocal(palmMid.clone());
-    inModel.x -= side === "right" ? -HAND_SPREAD / 2 : HAND_SPREAD / 2;
+    inModel.x -= side === "right" ? HAND_SPREAD / 2 : -HAND_SPREAD / 2;
     pivot.position.sub(inModel);
   }
   console.log("hands: re-parent gate maxDiff =", gateDiff.toExponential(3));
