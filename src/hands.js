@@ -10,7 +10,7 @@ const HAND_SCALE = 1.55;
 const HAND_SPREAD = 0.08;
 // Inward yaw per hand (deg) forming the cupped "W" catching bowl —
 // real slip technique: hands are not parallel, thumbs meet in the middle
-const CUP_YAW_DEG = 20;
+const CUP_YAW_DEG = 30;
 // Target pose: palms face the incoming ball (-Z) tilted ~25 deg up;
 // fingers point up, leaning ~25 deg toward the viewer (cupped look)
 const FINGER_DIR = new THREE.Vector3(
@@ -148,16 +148,19 @@ function rigHand(gltfScene, bones, side, scanJoints) {
   // right; +X draws both tips inward across the palm.
   const _tm = gltfScene.getObjectByName("thumb-metacarpal");
   const _adductSign = side === "right" ? -1 : 1;
+  // Right thumb tilts further forward so it layers ON TOP of the left at
+  // the crossing; X draw pulls tips inward+down forming the low X
+  const _yawDeg = 50;
   _tm.quaternion.multiply(
     new THREE.Quaternion().setFromAxisAngle(
       new THREE.Vector3(0, 1, 0),
-      (_adductSign * 22 * Math.PI) / 180,
+      (_adductSign * _yawDeg * Math.PI) / 180,
     ),
   );
   _tm.quaternion.multiply(
     new THREE.Quaternion().setFromAxisAngle(
       new THREE.Vector3(1, 0, 0),
-      (4 * Math.PI) / 180,
+      (40 * Math.PI) / 180,
     ),
   );
 
@@ -232,6 +235,7 @@ export function createHands({ left, right }) {
     const inModel = model.worldToLocal(palmMid.clone());
     inModel.x -= side === "right" ? HAND_SPREAD / 2 : -HAND_SPREAD / 2;
     pivot.position.sub(inModel);
+    if (side === "right") pivot.position.z += 0.02;
   }
   console.log("hands: re-parent gate maxDiff =", gateDiff.toExponential(3));
 
