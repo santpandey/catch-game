@@ -1,3 +1,4 @@
-# SPA fallback — mirrors the netlify.toml redirect. Static assets still
-# take precedence (Pages serves existing files before applying redirects).
-/* /index.html 200
+# SPA fallback is handled natively by wrangler.jsonc
+# (assets.not_found_handling = "single-page-application").
+# A `/* /index.html 200` rule here is rejected by Workers static assets
+# as an infinite loop, since /index.html itself matches /*.
