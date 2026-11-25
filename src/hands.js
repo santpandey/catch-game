@@ -5,7 +5,7 @@ import * as THREE from "three";
 // with attach() (world transforms preserved, verified) so they can curl.
 
 // ~0.26 m of hand at 0.8 m from camera ≈ 20% of frame height
-const HAND_SCALE = 2.0;
+const HAND_SCALE = 1.55;
 // Palm centres sit this far apart around the group origin (model units)
 const HAND_SPREAD = 0.08;
 // Inward yaw per hand (deg) forming the cupped "W" catching bowl —
@@ -151,13 +151,13 @@ function rigHand(gltfScene, bones, side, scanJoints) {
   _tm.quaternion.multiply(
     new THREE.Quaternion().setFromAxisAngle(
       new THREE.Vector3(0, 1, 0),
-      (_adductSign * 27 * Math.PI) / 180,
+      (_adductSign * 22 * Math.PI) / 180,
     ),
   );
   _tm.quaternion.multiply(
     new THREE.Quaternion().setFromAxisAngle(
       new THREE.Vector3(1, 0, 0),
-      (15 * Math.PI) / 180,
+      (4 * Math.PI) / 180,
     ),
   );
 
