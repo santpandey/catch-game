@@ -140,6 +140,28 @@ function rigHand(gltfScene, bones, side, scanJoints) {
   gltfScene.updateMatrixWorld(true);
   const sign = t1.sub(t0).dot(N) > 0 ? 1 : -1;
 
+  // Thumb adduction baked into the base pose: real catching technique holds
+  // the thumbs lying across toward each other — visible in the middle of
+  // the "W" — not splayed in the hand plane where they hide edge-on behind
+  // the palm. Axis directions derived from measured tip-displacement
+  // Jacobians: +Y sweeps the left thumb toward the camera, mirrored for
+  // right; +X draws both tips inward across the palm.
+  const _tm = gltfScene.getObjectByName("thumb-metacarpal");
+  const _adductSign = side === "right" ? -1 : 1;
+  _tm.quaternion.multiply(
+    new THREE.Quaternion().setFromAxisAngle(
+      new THREE.Vector3(0, 1, 0),
+      (_adductSign * 27 * Math.PI) / 180,
+    ),
+  );
+  _tm.quaternion.multiply(
+    new THREE.Quaternion().setFromAxisAngle(
+      new THREE.Vector3(1, 0, 0),
+      (15 * Math.PI) / 180,
+    ),
+  );
+
+
   for (const [fname, chain] of Object.entries(CHAINS)) {
     const table = chain[0].startsWith("thumb") ? THUMB_DEG : CURL_DEG;
     const key = side + ":" + fname;
