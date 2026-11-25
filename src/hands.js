@@ -23,17 +23,17 @@ const PALM_NORMAL = new THREE.Vector3(
 
 // Curl angles (deg) at [open, caught] per joint-name tail
 const CURL_DEG = {
-  metacarpal: [0, 20],
-  "phalanx-proximal": [10, 75],
-  "phalanx-intermediate": [10, 90],
-  "phalanx-distal": [0, 60],
-  tip: [0, 30],
+  metacarpal: [0, 18],
+  "phalanx-proximal": [10, 55],
+  "phalanx-intermediate": [10, 60],
+  "phalanx-distal": [0, 30],
+  tip: [0, 12],
 };
 const THUMB_DEG = {
   metacarpal: [0, 15],
-  "phalanx-proximal": [0, 35],
-  "phalanx-distal": [0, 40],
-  tip: [0, 20],
+  "phalanx-proximal": [0, 30],
+  "phalanx-distal": [0, 34],
+  tip: [0, 16],
 };
 
 const CHAINS = {
@@ -301,8 +301,8 @@ export function createHands({ left, right }) {
       // the finger line: palm plane + a bit of forward and up
       return target.set(
         group.position.x + PALM_NORMAL.x * 0.1,
-        group.position.y + PALM_NORMAL.y * 0.1 + give.y + 0.04,
-        group.position.z + PALM_NORMAL.z * 0.1 + give.z + 0.02,
+        group.position.y + PALM_NORMAL.y * 0.1 + give.y + 0.05,
+        group.position.z + PALM_NORMAL.z * 0.1 + give.z + 0.025,
       );
     },
   };
