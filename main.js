@@ -17,6 +17,13 @@ import {
   HANDS_Z,
   BALL_MASS,
 } from "./src/delivery.js";
+import {
+  THROWER_POS,
+  BAT_CONTACT,
+  LEG_A_TIME,
+  legAPosition,
+  createBat,
+} from "./src/drill.js";
 
 // --- URL params ---
 const urlParams = new URLSearchParams(window.location.search);
@@ -38,6 +45,7 @@ let scene,
   releaseFlash;
 let stadium = null;
 let floodlights = null;
+let drillBat = null;
 
 // Game state
 // screen: "title" | "flyin" | "play" | "gameover"
@@ -323,6 +331,7 @@ function init() {
     if (
       phase === "flight" &&
       delivery &&
+      delivery.leg === "B" &&
       delivery.swingType !== "none" &&
       ballBody.position.z > delivery.swingStartZ
     ) {
@@ -353,6 +362,9 @@ function init() {
 
   // Feel effects: trail, burst, shake
   effects = createEffects(scene, camera);
+
+  // Slip-drill staging: the angled bat the throw deflects off
+  drillBat = createBat(scene);
 
   // Ball
   ball = new THREE.Group();
@@ -732,42 +744,41 @@ function deliveryZone() {
 }
 
 function releaseBall() {
-  delivery = planDelivery({ difficulty, pace: paceLevel, window: deliveryZone() });
+  // Leg B is planned first: the deflection's physics must exist before the
+  // theatre begins so the handoff frame is a pure velocity swap. Leg A is
+  // scripted — fixed-duration straight thrower→bat flight, no physics.
+  delivery = planDelivery({
+    difficulty,
+    pace: paceLevel,
+    window: deliveryZone(),
+    start: { x: BAT_CONTACT.x, y: BAT_CONTACT.y, z: BAT_CONTACT.z },
+  });
+  delivery.leg = "A";
+  delivery.legT = 0;
   isBallCaught = false;
 
-  ballBody.position.set(
-    delivery.start.x,
-    delivery.start.y,
-    delivery.start.z,
-  );
-  ballBody.velocity.set(
-    delivery.velocity.x,
-    delivery.velocity.y,
-    delivery.velocity.z,
-  );
-  // Physics tumble is irrelevant to gameplay — the seam is driven
-  // procedurally, so keep the body's spin at zero.
+  // Park the physics body at the thrower, asleep — leg A drives the mesh
+  // directly and the body only wakes at the bat-contact handoff.
+  ballBody.position.set(THROWER_POS.x, THROWER_POS.y, THROWER_POS.z);
+  ballBody.velocity.set(0, 0, 0);
   ballBody.angularVelocity.set(0, 0, 0);
-  ballBody.wakeUp();
+  ballBody.sleep();
   ball.visible = true;
-  ball.position.copy(ballBody.position);
+  ball.position.copy(THROWER_POS);
 
-  // Seam upright, yawed to the horizontal release direction; swinging
-  // deliveries tilt the seam a touch towards the swing side (outswinger /
-  // inswinger seam position). Fixed for the whole flight — the gyroscopic
-  // stability of the seam is exactly what the visual is modelling.
-  const v = delivery.velocity;
-  const releaseYaw = Math.atan2(v.x, v.z);
-  const tilt =
-    delivery.swingType === "none"
-      ? 0
-      : Math.sign(delivery.swingForceX || 1) * SEAM_SWING_TILT;
-  seamBaseEuler.set(0, releaseYaw + tilt, 0);
+  // Seam upright along the throw line for the theatre leg; re-oriented at
+  // the handoff to the deflection direction.
+  const throwDir = Math.atan2(
+    BAT_CONTACT.x - THROWER_POS.x,
+    BAT_CONTACT.z - THROWER_POS.z,
+  );
+  seamBaseEuler.set(0, throwDir, 0);
   seamBaseQuat.setFromEuler(seamBaseEuler);
   seamSpinAngle = 0;
   ball.quaternion.copy(seamBaseQuat);
 
-  // Release flash
+  // Release flash at the thrower's hand
+  releaseFlash.position.copy(THROWER_POS);
   releaseFlash.material.opacity = 0.9;
 
   if (screen === "play") audio.playRelease();
@@ -781,6 +792,41 @@ function releaseBall() {
 
   // Reset hands to open pose for the new round
   if (hands) hands.reset();
+}
+
+// Bat-contact handoff: the scripted throw arrives at the face, the ball is
+// re-launched with the deflection plan's real physics, and the contact is
+// sold with flash + knock + bat recoil. From here on the round is exactly
+// the classic catch problem on a shorter, diagonal leg.
+function launchLegB() {
+  delivery.leg = "B";
+
+  ballBody.position.set(BAT_CONTACT.x, BAT_CONTACT.y, BAT_CONTACT.z);
+  ballBody.velocity.set(
+    delivery.velocity.x,
+    delivery.velocity.y,
+    delivery.velocity.z,
+  );
+  ballBody.angularVelocity.set(0, 0, 0);
+  ballBody.wakeUp();
+
+  // Seam upright, yawed to the deflection direction; swinging deliveries
+  // tilt the seam a touch towards the swing side.
+  const v = delivery.velocity;
+  const releaseYaw = Math.atan2(v.x, v.z);
+  const tilt =
+    delivery.swingType === "none"
+      ? 0
+      : Math.sign(delivery.swingForceX || 1) * SEAM_SWING_TILT;
+  seamBaseEuler.set(0, releaseYaw + tilt, 0);
+  seamBaseQuat.setFromEuler(seamBaseEuler);
+  seamSpinAngle = 0;
+
+  // Contact theatre — the illusion frame. Flash jumps to the bat face.
+  releaseFlash.position.copy(BAT_CONTACT);
+  releaseFlash.material.opacity = 0.9;
+  drillBat.hit();
+  if (screen === "play") audio.playBatContact();
 }
 
 function onCatch() {
@@ -943,9 +989,24 @@ function animate() {
         releaseBall();
       }
     } else if (phase === "flight") {
+      // Leg A: scripted theatre flight thrower→bat. The physics body stays
+      // asleep; at the fixed arrival frame the ball is re-launched (leg B).
+      if (delivery && delivery.leg === "A" && !isBallCaught) {
+        delivery.legT += deltaTime;
+        const t = Math.min(delivery.legT / LEG_A_TIME, 1);
+        legAPosition(t, ball.position);
+        seamSpinAngle += SEAM_SPIN_RATE * deltaTime;
+        ball.quaternion
+          .copy(seamBaseQuat)
+          .multiply(seamSpinQuat.setFromAxisAngle(X_AXIS, seamSpinAngle));
+        if (delivery.legT >= LEG_A_TIME) {
+          launchLegB();
+        }
+      }
+
       world.step(1 / 60, deltaTime, 3);
 
-      if (!isBallCaught) {
+      if (!isBallCaught && delivery && delivery.leg === "B") {
         ball.position.copy(ballBody.position);
         // Backspin around the seam normal — the ring rotates within its own
         // vertical plane, so the seam reads upright the whole way down.
@@ -953,7 +1014,7 @@ function animate() {
         ball.quaternion
           .copy(seamBaseQuat)
           .multiply(seamSpinQuat.setFromAxisAngle(X_AXIS, seamSpinAngle));
-      } else if (hands) {
+      } else if (isBallCaught && hands) {
         // Keep ball attached to hands when caught
         hands.ballAnchor(ball.position);
       }
@@ -963,7 +1024,7 @@ function animate() {
         playerHands.position.lerp(autoTarget, Math.min(1, deltaTime * 4));
       }
 
-      if (playerHands && !isBallCaught) {
+      if (playerHands && !isBallCaught && delivery && delivery.leg === "B") {
         const distance = playerHands.position.distanceTo(ball.position);
         if (distance < 0.35 && ballBody.position.z < HANDS_Z + 0.6) {
           onCatch();
@@ -996,6 +1057,9 @@ function animate() {
       releaseFlash.scale.set(s, s, 1);
     }
   }
+
+  // Bat contact-recoil animation
+  if (drillBat) drillBat.update(deltaTime);
 
   // Update the hands (curl timeline, catch give) on every frame
   if (hands) {

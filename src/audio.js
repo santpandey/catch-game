@@ -195,6 +195,34 @@ export function createAudio() {
     cleanupOn(osc, [og]);
   }
 
+  function playBatContact() {
+    if (!ready()) return;
+    const t = ctx.currentTime + 0.005;
+
+    // Willow knock: a resonant low-mid "tock". Real bat cracks are dominated
+    // by the blade's first vibration mode (~700-900 Hz) with a very fast decay.
+    const osc = ctx.createOscillator();
+    osc.type = "triangle";
+    osc.frequency.setValueAtTime(820, t);
+    osc.frequency.exponentialRampToValueAtTime(520, t + 0.09);
+    const og = ctx.createGain();
+    env(og.gain, t, 0.001, 0.75, 0.1);
+    osc.connect(og);
+    og.connect(master);
+    osc.start(t);
+    osc.stop(t + 0.14);
+    cleanupOn(osc, [og]);
+
+    // Hard attack transient: short high-band noise snap.
+    const bp = filter("bandpass", 2800, 1.2);
+    const g = ctx.createGain();
+    env(g.gain, t, 0.001, 0.5, 0.03);
+    const src = noise(t, 0.04, [bp, g]);
+    src.connect(bp);
+    bp.connect(g);
+    g.connect(master);
+  }
+
   function playCatch() {
     if (!ready()) return;
     const t = ctx.currentTime + 0.005;
@@ -431,6 +459,7 @@ export function createAudio() {
     isMuted: () => muted,
     setAmbience,
     playRelease: safe(playRelease),
+    playBatContact: safe(playBatContact),
     playCatch: safe(playCatch),
     playCheer: safe(playCheer),
     playDrop: safe(playDrop),
