@@ -83,7 +83,7 @@ function skinMaterial(m) {
 
 // Re-parent the flat joints into chains, add open/caught poses per bone,
 // and return the pose/axis info needed to place the hand.
-function rigHand(gltfScene, bones) {
+function rigHand(gltfScene, bones, side) {
   const armature = gltfScene.getObjectByName("Armature");
   gltfScene.updateMatrixWorld(true);
 
@@ -133,7 +133,7 @@ function rigHand(gltfScene, bones) {
   gltfScene.updateMatrixWorld(true);
   const sign = t1.sub(t0).dot(N) > 0 ? 1 : -1;
 
-  for (const chain of Object.values(CHAINS)) {
+  for (const [fname, chain] of Object.entries(CHAINS)) {
     const table = chain[0].startsWith("thumb") ? THUMB_DEG : CURL_DEG;
     for (const name of chain) {
       const bone = gltfScene.getObjectByName(name);
@@ -145,7 +145,7 @@ function rigHand(gltfScene, bones) {
       const openQ = open.clone().multiply(_rx);
       _rx.setFromAxisAngle(_axisX, (catchDeg * sign * Math.PI) / 180);
       const caught = open.clone().multiply(_rx);
-      bones.push({ bone, open: openQ, caught });
+      bones.push({ bone, open: openQ, caught, finger: side + ":" + fname });
     }
   }
 
@@ -166,7 +166,7 @@ export function createHands({ left, right }) {
     ["right", right],
     ["left", left],
   ]) {
-    const rig = rigHand(gltfScene, bones);
+    const rig = rigHand(gltfScene, bones, side);
     gateDiff = Math.max(gateDiff, rig.maxDiff);
     wrists.push(rig.wrist);
 
@@ -224,6 +224,52 @@ export function createHands({ left, right }) {
   let dropT = -1;
   const give = { y: 0, z: 0, rotX: 0 };
   const basePos = new THREE.Vector3();
+
+  // Per-finger contact limits: at the catch instant we scan curl values with
+  // forward kinematics and cap each finger where its tip would meet the ball,
+  // so fingers close onto the surface instead of passing through it.
+  const tipBones = {};
+  for (const b of bones) {
+    if (b.bone.name.endsWith("-tip") && !tipBones[b.finger]) {
+      tipBones[b.finger] = b.bone;
+    }
+  }
+  const curlLimits = {};
+  for (const key of Object.keys(tipBones)) curlLimits[key] = 1;
+
+  function computeContactLimits() {
+    // Where the ball will sit once settled in the cup (give motion decayed)
+    _v.set(
+      group.position.x + PALM_NORMAL.x * 0.145,
+      group.position.y + PALM_NORMAL.y * 0.145 + 0.05,
+      group.position.z + PALM_NORMAL.z * 0.145 + 0.025,
+    );
+    const firstContact = {};
+    // A finger's tip depends only on its own chain, so posing every chain at
+    // the same curl value yields correct per-finger positions in one pass.
+    for (let c = 0.15; c <= 1.001; c += 0.05) {
+      for (const b of bones) {
+        b.bone.quaternion.slerpQuaternions(b.open, b.caught, c);
+      }
+      model.updateMatrixWorld(true);
+      for (const [key, tip] of Object.entries(tipBones)) {
+        if (firstContact[key] !== undefined) continue;
+        const e = tip.matrixWorld.elements;
+        const dx = e[12] - _v.x;
+        const dy = e[13] - _v.y;
+        const dz = e[14] - _v.z;
+        if (Math.sqrt(dx * dx + dy * dy + dz * dz) < 0.105) {
+          firstContact[key] = c;
+        }
+      }
+    }
+    for (const key of Object.keys(tipBones)) {
+      // Back off two scan steps before first contact so the fingertip mesh
+      // (which extends past the tip joint) also clears the surface.
+      curlLimits[key] =
+        firstContact[key] === undefined ? 1 : Math.max(0.1, firstContact[key] - 0.1);
+    }
+  }
   const reducedMotion =
     typeof matchMedia === "function" &&
     matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -239,7 +285,7 @@ export function createHands({ left, right }) {
     if (catchT >= 0) {
       catchT += dt;
       // Snap shut fast, settle to a wrap that keeps the ball visible
-      curlTarget = catchT < 0.08 ? 1.0 : 0.82;
+      curlTarget = catchT < 0.08 ? 0.9 : 0.8;
       curlSpeed = catchT < 0.08 ? 20 : 8;
       if (catchT > 1.0) catchT = -1;
     }
@@ -251,7 +297,11 @@ export function createHands({ left, right }) {
     }
     curl += (curlTarget - curl) * Math.min(1, curlSpeed * dt);
     for (const b of bones) {
-      b.bone.quaternion.slerpQuaternions(b.open, b.caught, curl);
+      b.bone.quaternion.slerpQuaternions(
+        b.open,
+        b.caught,
+        Math.min(curl, curlLimits[b.finger] ?? 1),
+      );
     }
 
     let gy = 0;
@@ -282,6 +332,7 @@ export function createHands({ left, right }) {
     catchT = -1;
     dropT = -1;
     give.y = give.z = give.rotX = 0;
+    for (const key of Object.keys(curlLimits)) curlLimits[key] = 1;
   }
 
   return {
@@ -291,18 +342,20 @@ export function createHands({ left, right }) {
     catch() {
       catchT = 0;
       dropT = -1;
+      computeContactLimits();
     },
     drop() {
       dropT = 0;
       catchT = -1;
+      for (const key of Object.keys(curlLimits)) curlLimits[key] = 1;
     },
     ballAnchor(target) {
       // Ball rests in the cup but high enough that ~1/4 of it shows above
       // the finger line: palm plane + a bit of forward and up
       return target.set(
-        group.position.x + PALM_NORMAL.x * 0.1,
-        group.position.y + PALM_NORMAL.y * 0.1 + give.y + 0.05,
-        group.position.z + PALM_NORMAL.z * 0.1 + give.z + 0.025,
+        group.position.x + PALM_NORMAL.x * 0.145,
+        group.position.y + PALM_NORMAL.y * 0.145 + give.y + 0.05,
+        group.position.z + PALM_NORMAL.z * 0.145 + give.z + 0.025,
       );
     },
   };
