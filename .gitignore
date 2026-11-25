@@ -99,3 +99,4 @@ store-assets/
 
 # itch.io upload artifact (regenerable: npm run package-itch)
 slip-catch.zip
+reels/

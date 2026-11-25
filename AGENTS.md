@@ -31,3 +31,4 @@ launched. Stop any dev/preview servers you start when finished.
 - `?shot` — skip title, straight into play
 - `?shot=title` — stay on title / attract mode
 - `?shot=promo` — attract scene with all DOM UI hidden (store screenshots)
+- `node tools/capture-reel.mjs <outdir> <seconds> [catchesJump] [errorRate] [overlays.json]` — record portrait (1080x1920) gameplay video for social reels; scripted autopilot drives catches (errorRate ~0.45 produces natural drops), overlays.json adds timed text. Needs dev server (CAPTURE_PORT env, default 5173). Convert webm→mp4: `ffmpeg -i x.webm -ss 2.6 -c:v libx264 -crf 20 -preset slow -pix_fmt yuv420p -movflags +faststart -an out.mp4`
