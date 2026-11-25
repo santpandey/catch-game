@@ -500,6 +500,9 @@ function init() {
       get hands() {
         return playerHands;
       },
+      get handsCtl() {
+        return hands;
+      },
       get ball() {
         return ball;
       },

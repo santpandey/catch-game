@@ -5,7 +5,7 @@ import * as THREE from "three";
 // with attach() (world transforms preserved, verified) so they can curl.
 
 // ~0.26 m of hand at 0.8 m from camera ≈ 20% of frame height
-const HAND_SCALE = 1.6;
+const HAND_SCALE = 2.0;
 // Palm centres sit this far apart around the group origin (model units)
 const HAND_SPREAD = 0.08;
 // Target pose: palms face the incoming ball (-Z) tilted ~25 deg up;
@@ -140,11 +140,13 @@ function rigHand(gltfScene, bones, side, scanJoints) {
     for (const name of chain) {
       const bone = gltfScene.getObjectByName(name);
       if (!bone) continue;
-      // Only the moving, visible segments drive contact. Metacarpals and
-      // proximal phalanges sit statically deep in the cup where the ball
-      // nests — including them freezes the finger before its tip can close.
-      if (!/-(tip|distal|intermediate)$/.test(name) && !name.endsWith("thumb-tip")) continue;
-      scanJoints[key].push(bone);
+      // Only the moving, visible segments drive contact scanning — but every
+      // joint must still be posed below. Metacarpals and proximal phalanges
+      // sit statically deep in the cup where the ball nests — including them
+      // in the scan freezes the finger before its tip can close.
+      if (/-(tip|distal|intermediate)$/.test(name) || name.endsWith("thumb-tip")) {
+        scanJoints[key].push(bone);
+      }
       const [openDeg, catchDeg] = table[jointTail(name)] || [0, 0];
       if (openDeg === 0 && catchDeg === 0) continue;
       const open = bone.quaternion.clone();
@@ -241,8 +243,10 @@ export function createHands({ left, right }) {
   const curlLimits = {};
   for (const key of Object.keys(scanJoints)) curlLimits[key] = 1;
 
-  const CONTACT_CLEARANCE = 0.118; // ball radius + finger skin thickness
-  const ANCHOR_PALM = 0.105; // ball centre offset along the palm normal
+  const CONTACT_CLEARANCE = 0.1; // ball radius + finger skin thickness
+  const ANCHOR_PALM = 0.115; // ball centre offset along the palm normal
+  const ANCHOR_UP = 0.07; // vertical lift out of the cup floor
+  const ANCHOR_FWD = 0.01; // forward offset toward the camera
   const SCAN_STEP = 0.025;
   // The ball anchors rigidly in the cup, so the contact geometry is identical
   // for every catch — scanning once is enough. The first scan almost always
@@ -254,8 +258,8 @@ export function createHands({ left, right }) {
     // Where the ball will sit once settled in the cup (give motion decayed)
     _v.set(
       group.position.x + PALM_NORMAL.x * ANCHOR_PALM,
-      group.position.y + PALM_NORMAL.y * ANCHOR_PALM + 0.05,
-      group.position.z + PALM_NORMAL.z * ANCHOR_PALM + 0.025,
+      group.position.y + PALM_NORMAL.y * ANCHOR_PALM + ANCHOR_UP,
+      group.position.z + PALM_NORMAL.z * ANCHOR_PALM + ANCHOR_FWD,
     );
     const firstContact = {};
     const resting = {};
@@ -310,10 +314,19 @@ export function createHands({ left, right }) {
     }
     if (catchT >= 0) {
       catchT += dt;
-      // Snap shut fast, settle to a wrap that keeps the ball visible
-      curlTarget = catchT < 0.08 ? 0.9 : 0.8;
-      curlSpeed = catchT < 0.08 ? 20 : 8;
-      if (catchT > 1.0) catchT = -1;
+      // Snap shut fast, hold while the ball is shown in the cup (the result
+      // phase hides it at ~1s), then open back up well before the next ball.
+      if (catchT < 0.08) {
+        curlTarget = 0.9;
+        curlSpeed = 20;
+      } else if (catchT < 1.0) {
+        curlTarget = 0.8;
+        curlSpeed = 8;
+      } else {
+        curlTarget = 0;
+        curlSpeed = 4;
+      }
+      if (catchT > 1.6) catchT = -1;
     }
     if (dropT >= 0) {
       dropT += dt;
@@ -364,6 +377,9 @@ export function createHands({ left, right }) {
     group,
     update,
     reset,
+    debugState() {
+      return { curl, curlTarget, catchT, limits: { ...curlLimits } };
+    },
     catch() {
       catchT = 0;
       dropT = -1;
@@ -378,8 +394,8 @@ export function createHands({ left, right }) {
       // the finger line: palm plane + a bit of forward and up
       return target.set(
         group.position.x + PALM_NORMAL.x * ANCHOR_PALM,
-        group.position.y + PALM_NORMAL.y * ANCHOR_PALM + give.y + 0.05,
-        group.position.z + PALM_NORMAL.z * ANCHOR_PALM + give.z + 0.025,
+        group.position.y + PALM_NORMAL.y * ANCHOR_PALM + give.y + ANCHOR_UP,
+        group.position.z + PALM_NORMAL.z * ANCHOR_PALM + give.z + ANCHOR_FWD,
       );
     },
   };
