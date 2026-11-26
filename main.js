@@ -368,6 +368,10 @@ function init() {
 
   // Ball
   ball = new THREE.Group();
+  // Visual scale 0.75: the 0.1m radius is nearly 3x a real cricket ball.
+  // 15% reduction still read oversized in the cup; at 25% the ball nests
+  // with the fingers wrapping over it. Physics body unchanged.
+  ball.scale.setScalar(0.75);
   const ballGeometry = new THREE.SphereGeometry(0.1, 16, 16);
   const ballMaterial = new THREE.MeshStandardMaterial({
     map: createBallTexture(),
