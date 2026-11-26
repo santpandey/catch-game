@@ -278,8 +278,8 @@ export function createHands({ left, right }) {
   for (const key of Object.keys(scanJoints)) curlLimits[key] = 1;
 
   const CONTACT_CLEARANCE = 0.1; // ball radius + finger skin thickness
-  const ANCHOR_PALM = 0.115; // ball centre offset along the palm normal
-  const ANCHOR_UP = 0.07; // vertical lift out of the cup floor
+  const ANCHOR_PALM = 0.08; // ball centre offset along the palm normal
+  const ANCHOR_UP = 0.025; // vertical lift out of the cup floor
   const ANCHOR_FWD = 0.01; // forward offset toward the camera
   const SCAN_STEP = 0.025;
   // The ball anchors rigidly in the cup, so the contact geometry is identical
