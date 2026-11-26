@@ -5,7 +5,7 @@ import * as THREE from "three";
 // with attach() (world transforms preserved, verified) so they can curl.
 
 // ~0.26 m of hand at 0.8 m from camera ≈ 20% of frame height
-const HAND_SCALE = 1.55;
+const HAND_SCALE = 1.3;
 // Palm centres sit this far apart around the group origin (model units)
 const HAND_SPREAD = 0.08;
 // Inward yaw per hand (deg) forming the cupped "W" catching bowl —

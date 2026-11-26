@@ -78,9 +78,14 @@ export function createBat(scene) {
   // Orient: standing nearly upright, leaning back ~55° so the face is a
   // ramp the incoming throw can "hit", and yawed open toward the
   // camera/hands side — the edge naturally flies toward the cordon.
+  // Horizontal drill position: the kneeling batsman holds the bat parallel
+  // to the ground, handle to the LEFT, blade extending right across the
+  // pitch edge. Lay flat about Z, then tilt the face up slightly toward the
+  // incoming throw so the edge deflection reads with a little rotation.
   group.rotation.order = "YXZ";
-  group.rotation.y = 0.55; // open the face toward the camera side
-  group.rotation.x = -0.95; // lean the blade back into ramp position
+  group.rotation.z = -Math.PI / 2; // lay flat: handle left, blade right
+  group.rotation.y = 0.35; // angle the blade slightly across the pitch line
+  group.rotation.x = 0.3; // tilt the face up toward the incoming ball
 
   // Anchor the blade's contact-centre at BAT_CONTACT: the group origin is
   // the handle base; shift so the blade's mid-face sits on the contact point

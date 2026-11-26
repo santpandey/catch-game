@@ -1031,7 +1031,7 @@ function animate() {
         const _dx = ball.position.x - playerHands.position.x;
         const _dy = ball.position.y - playerHands.position.y;
         const distance = Math.hypot(_dx, _dy);
-        if (distance < 0.27 && ballBody.position.z < HANDS_Z + 0.6) {
+        if (distance < 0.23 && ballBody.position.z < HANDS_Z + 0.6) {
           onCatch();
         } else if (
           ballBody.position.z > HANDS_Z + 0.7 ||
