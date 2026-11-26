@@ -154,9 +154,9 @@ function rigHand(gltfScene, bones, side, scanJoints) {
   const _tm = gltfScene.getObjectByName("thumb-metacarpal");
   const _thumbQuat =
     side === "right"
-      ? new THREE.Quaternion(-0.18394, -0.43937, 0.3508, 0.80626)
-      : new THREE.Quaternion(-0.17833, 0.43572, -0.33284, 0.81704);
-  _tm.quaternion.premultiply(_thumbQuat);
+      ? new THREE.Quaternion(-0.46191, -0.16373, -0.2846, 0.82391)
+      : new THREE.Quaternion(-0.44735, 0.18839, 0.3192, 0.81393);
+  _tm.quaternion.copy(_thumbQuat);
 
 
   for (const [fname, chain] of Object.entries(CHAINS)) {
