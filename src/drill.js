@@ -99,7 +99,11 @@ export function createBat(scene) {
   // moment of impact, springing back over ~0.35 s. Driven from main loop.
   const baseQuat = group.quaternion.clone();
   const hitQuat = new THREE.Quaternion();
-  const joltAxis = new THREE.Vector3(1, 0, 0);
+  // Twist about the bat's own long axis (local Y, blade direction) blended
+  // with a backward kick — the way impact visibly twists the bat in the
+  // holder's grip. Post-multiplied below, so the axis is in the bat's
+  // local frame and survives the horizontal reorientation.
+  const joltAxis = new THREE.Vector3(0.35, 1, 0).normalize();
   let recoilT = -1; // <0 idle
 
   return {
@@ -117,11 +121,11 @@ export function createBat(scene) {
         group.quaternion.copy(baseQuat);
         return;
       }
-      // Fast kick back (~7°), damped spring return — reads as the ball
+      // Fast twist out (~16°), damped spring return — reads as the ball
       // striking the face without any collision ever existing
       const t = recoilT / D;
       const kick = Math.sin(Math.min(t * 3, 1) * Math.PI) * (1 - t * 0.6);
-      hitQuat.setFromAxisAngle(joltAxis, (-kick * 7 * Math.PI) / 180);
+      hitQuat.setFromAxisAngle(joltAxis, (-kick * 16 * Math.PI) / 180);
       group.quaternion.copy(baseQuat).multiply(hitQuat);
     },
   };
