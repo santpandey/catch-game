@@ -1031,7 +1031,14 @@ function animate() {
         const _dx = ball.position.x - playerHands.position.x;
         const _dy = ball.position.y - playerHands.position.y;
         const distance = Math.hypot(_dx, _dy);
-        if (distance < 0.23 && ballBody.position.z < HANDS_Z + 0.6) {
+        // Tight z-window at the hand plane: without it the one-sided gate
+        // (z < HANDS_Z + 0.6) is true for the whole of leg B, so a ball
+        // lined up with the hands triggered the catch far before visually
+        // arriving — the phantom catch. The ball must actually be AT the
+        // plane, and the planar margin is reduced to match the cup.
+        const _zIn = ballBody.position.z > HANDS_Z - 0.25 &&
+          ballBody.position.z < HANDS_Z + 0.4;
+        if (distance < 0.19 && _zIn) {
           onCatch();
         } else if (
           ballBody.position.z > HANDS_Z + 0.7 ||

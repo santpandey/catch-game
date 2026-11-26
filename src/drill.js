@@ -115,17 +115,28 @@ export function createBat(scene) {
     update(dt) {
       if (recoilT < 0) return;
       recoilT += dt;
-      const D = 0.35;
-      if (recoilT >= D) {
+      // Twist in fast (~0.12s), HOLD the inclined position for a few
+      // seconds the way a real edge leaves the bat turned in the grip,
+      // then ease back before the next delivery.
+      const TWIST_IN = 0.12;
+      const HOLD_END = 2.6;
+      const DONE = 3.2;
+      if (recoilT >= DONE) {
         recoilT = -1;
         group.quaternion.copy(baseQuat);
         return;
       }
-      // Fast twist out (~16°), damped spring return — reads as the ball
-      // striking the face without any collision ever existing
-      const t = recoilT / D;
-      const kick = Math.sin(Math.min(t * 3, 1) * Math.PI) * (1 - t * 0.6);
-      hitQuat.setFromAxisAngle(joltAxis, (-kick * 16 * Math.PI) / 180);
+      let k;
+      if (recoilT < TWIST_IN) {
+        const t = recoilT / TWIST_IN;
+        k = 1 - (1 - t) * (1 - t); // ease out into the twist
+      } else if (recoilT < HOLD_END) {
+        k = 1; // held inclined
+      } else {
+        const t = (recoilT - HOLD_END) / (DONE - HOLD_END);
+        k = 1 - t * t * (3 - 2 * t); // smoothstep back to rest
+      }
+      hitQuat.setFromAxisAngle(joltAxis, (-k * 16 * Math.PI) / 180);
       group.quaternion.copy(baseQuat).multiply(hitQuat);
     },
   };
