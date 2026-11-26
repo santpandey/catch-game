@@ -146,23 +146,17 @@ function rigHand(gltfScene, bones, side, scanJoints) {
   // the palm. Axis directions derived from measured tip-displacement
   // Jacobians: +Y sweeps the left thumb toward the camera, mirrored for
   // right; +X draws both tips inward across the palm.
+  // Thumb pose for the catching "W": local rotation quaternions computed
+  // by direction-targeting in-browser — the exact rotation aligning each
+  // thumb metacarpal's bone direction with the desired world direction
+  // (inward-dominant, moderately up, slight forward) so the pair crosses
+  // in the centre gap, tips pointing up-inward, right over left.
   const _tm = gltfScene.getObjectByName("thumb-metacarpal");
-  const _adductSign = side === "right" ? -1 : 1;
-  // Right thumb tilts further forward so it layers ON TOP of the left at
-  // the crossing; X draw pulls tips inward+down forming the low X
-  const _yawDeg = 50;
-  _tm.quaternion.multiply(
-    new THREE.Quaternion().setFromAxisAngle(
-      new THREE.Vector3(0, 1, 0),
-      (_adductSign * _yawDeg * Math.PI) / 180,
-    ),
-  );
-  _tm.quaternion.multiply(
-    new THREE.Quaternion().setFromAxisAngle(
-      new THREE.Vector3(1, 0, 0),
-      (40 * Math.PI) / 180,
-    ),
-  );
+  const _thumbQuat =
+    side === "right"
+      ? new THREE.Quaternion(-0.18394, -0.43937, 0.3508, 0.80626)
+      : new THREE.Quaternion(-0.17833, 0.43572, -0.33284, 0.81704);
+  _tm.quaternion.premultiply(_thumbQuat);
 
 
   for (const [fname, chain] of Object.entries(CHAINS)) {
