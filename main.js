@@ -1025,8 +1025,13 @@ function animate() {
       }
 
       if (playerHands && !isBallCaught && delivery && delivery.leg === "B") {
-        const distance = playerHands.position.distanceTo(ball.position);
-        if (distance < 0.35 && ballBody.position.z < HANDS_Z + 0.6) {
+        // Planar distance at the hand plane — the z component inflated the
+        // old spherical test into catches that visibly missed the hands.
+        // Radius matches the visual span of the scaled-down pair.
+        const _dx = ball.position.x - playerHands.position.x;
+        const _dy = ball.position.y - playerHands.position.y;
+        const distance = Math.hypot(_dx, _dy);
+        if (distance < 0.27 && ballBody.position.z < HANDS_Z + 0.6) {
           onCatch();
         } else if (
           ballBody.position.z > HANDS_Z + 0.7 ||

@@ -155,7 +155,7 @@ function rigHand(gltfScene, bones, side, scanJoints) {
   const _thumbQuat =
     side === "right"
       ? new THREE.Quaternion(-0.46191, -0.16373, -0.2846, 0.82391)
-      : new THREE.Quaternion(-0.44735, 0.18839, 0.3192, 0.81393);
+      : new THREE.Quaternion(-0.4634, 0.26891, 0.27275, 0.79908);
   _tm.quaternion.copy(_thumbQuat);
 
 
